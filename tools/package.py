@@ -9,7 +9,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 paths = []
 for name in ['sucacenter.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
-             '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible']:
+             '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible', 'stacks']:
     item = root / name
     for p in sorted(item.rglob('*')) if item.is_dir() else [item]:
         if not p.is_file() or p.is_symlink() or '__pycache__' in p.parts or p.suffix == '.pyc':

@@ -1,5 +1,13 @@
 # Histórico
 
+## 1.3.0
+
+- Portainer CE LTS como stack opcional do Docker Swarm.
+- Servidor fixado ao manager e Agent global nos nos Linux.
+- Somente HTTPS 9443 publicada; portas internas e Edge nao expostas.
+- Comandos portainer validate|setup|status, espera de convergencia e protecoes.
+- Volume persistente preservado em atualizacoes e documentacao de seguranca.
+
 ## 1.2.0
 
 - Replicacao automatica e unidirecional do shared com Syncthing.

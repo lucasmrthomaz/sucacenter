@@ -61,3 +61,12 @@ jobs/queue é somente estrutura inicial, sem daemon.
 
 Docker: cluster-docker help; cluster-docker-status --all; cluster-compose up -d.
 Swarm: cluster-swarm setup; cluster-swarm status.
+
+## Portainer
+
+    bash sucacenter.sh portainer validate
+    bash sucacenter.sh portainer setup
+    bash sucacenter.sh portainer status
+
+Execute no worker01. Acesse `https://192.168.1.110:9443` somente pela LAN ou
+por VPN privada. Veja [Portainer](portainer.md).

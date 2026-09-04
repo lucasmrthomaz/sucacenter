@@ -6,7 +6,7 @@ mkdir -p "$HOME/bin" "$C"/{logs,jobs,shared-files,workloads,config,archives,outp
 [[ -e "$C/config/settings.env" ]] || cp "$ROOT/config/settings.example.env" "$C/config/settings.env"
 # Instala cópia operacional sem .git, credenciais, configurações ou dados locais.
 if [[ "$(realpath "$ROOT")" != "$(realpath "$C/app")" ]]; then
-  for part in lib commands steps config tests docs ansible; do
+  for part in lib commands steps config tests docs ansible stacks; do
     mkdir -p "$C/app/$part"
     cp -a "$ROOT/$part/." "$C/app/$part/"
   done

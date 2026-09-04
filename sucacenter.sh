@@ -41,6 +41,8 @@ run_step() {
       printf 'validated-only\n' > "$C/config/state/$name"
     elif [[ "$name" == 09-replication ]]; then
       printf '%s\n' "${SUCACENTER_REPLICATION_MODE:-validate}-completed" > "$C/config/state/$name"
+    elif [[ "$name" == 10-portainer ]]; then
+      printf '%s\n' "${SUCACENTER_PORTAINER_MODE:-validate}-completed" > "$C/config/state/$name"
     else
       printf 'ok\n' > "$C/config/state/$name"
     fi
@@ -71,6 +73,7 @@ case "$action" in
       docker) target=06-docker;; swarm) target=07-swarm;;
       services) target=08-services;;
       replication) target=09-replication;;
+      portainer) target=10-portainer;;
     esac
     run_step "$target" ;;
   services)
@@ -89,6 +92,13 @@ case "$action" in
     esac
     [[ "$SUCACENTER_REPLICATION_MODE" != setup || "$SUCACENTER_NO_INSTALL" != 1 ]] || die "--no-install prevents replication setup."
     run_step 09-replication ;;
+  portainer)
+    case "${target:-validate}" in
+      setup|validate|status) export SUCACENTER_PORTAINER_MODE="${target:-validate}" ;;
+      *) die "Use portainer setup|validate|status" ;;
+    esac
+    [[ "$SUCACENTER_PORTAINER_MODE" != setup || "$SUCACENTER_NO_INSTALL" != 1 ]] || die "--no-install prevents portainer setup."
+    run_step 10-portainer ;;
   doctor|status) bash "$ROOT/commands/cluster" "$action" ;;
   test)
     case "$target" in
@@ -100,7 +110,10 @@ case "$action" in
     esac ;;
   help|--help|-h)
     cat <<'HELP'
-SucaCenter 1.2.0 — Debian/Ubuntu/Linux Mint com systemd
+SucaCenter 1.3.0 — Debian/Ubuntu/Linux Mint com systemd
+  bash sucacenter.sh portainer validate            Validar stack sem alterar o Swarm
+  bash sucacenter.sh portainer setup               Instalar/atualizar Portainer no Swarm
+  bash sucacenter.sh portainer status              Verificar servicos e HTTPS
   bash sucacenter.sh replication validate         Validar sintaxe e inventory (sem acesso remoto)
   bash sucacenter.sh replication setup            Replica automatica + historico de 30 dias
   bash sucacenter.sh replication status           Verificar conexao, progresso e erros

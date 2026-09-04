@@ -2,10 +2,22 @@
 
 Laboratório de desenvolvimento com computadores reaproveitados: GNU Parallel,
 distcc + ccache, Docker Engine e Swarm. Instalador modular, comandos operacionais
-e testes, agora com Slurm, NFS, Samba, Gitea e replicacao via Ansible. Versão 1.2.0.
+e testes, agora com Slurm, NFS, Samba, Gitea, replicacao e Portainer. Versão 1.3.0.
 
 Fonte oficial: [lucasmrthomaz/sucacenter](https://github.com/lucasmrthomaz/sucacenter).
-Codigo, documentacao e [downloads v1.2.0](https://github.com/lucasmrthomaz/sucacenter/releases/tag/v1.2.0)
+Codigo, documentacao e downloads sao mantidos neste mesmo repositorio.
+
+## Portainer no Swarm
+
+No worker01, depois que o Swarm estiver operacional:
+
+    bash sucacenter.sh portainer validate
+    bash sucacenter.sh portainer setup
+    bash sucacenter.sh portainer status
+
+A interface fica em `https://192.168.1.110:9443`. O servidor roda no manager e
+o Agent em todos os nos Linux. Essa etapa e opt-in e preserva os outros servicos.
+Nao exponha a interface diretamente na internet; veja [Portainer](docs/portainer.md).
 sao mantidos neste mesmo repositorio.
 
 ## Replica automatica do shared
@@ -83,7 +95,7 @@ Falhas interrompem o setup, preservam logs e retornam erro. Corrija e repita.
 
     python3 tools/package.py
 
-Gera dist/sucacenter-1.2.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
+Gera dist/sucacenter-1.3.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
 O .sh contém o projeto compactado, verifica o payload e extrai uma cópia em
 ~/cluster/installations/, sem baixar código:
 
@@ -99,6 +111,7 @@ disco nem instalador offline de todas as dependências.
 - [Comandos](docs/comandos.md)
 - [Problemas comuns](docs/problemas-comuns.md)
 - [Backup e restauração](docs/backup-restauracao.md)
+- [Portainer](docs/portainer.md)
 - [Validação e histórico](docs/validacao.md)
 - [Mudanças](CHANGELOG.md)
 

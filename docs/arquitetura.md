@@ -10,6 +10,8 @@ RAM compartilhada.
 - Docker Engine: containers; Compose: aplicação em um host.
 - Swarm: serviços/réplicas em hosts; um manager e um worker não oferecem alta
   disponibilidade da gestão. Dois managers também não toleram perder um por quorum.
+- Portainer: interface HTTPS no manager e Agent global; administra o Swarm e tem
+  privilegios elevados por acessar o socket Docker.
 - K3s/Kubernetes: alternativas, não dependências deste projeto.
 
 ## Laboratório de origem
@@ -38,6 +40,9 @@ A etapa opcional replication acrescenta uma replica separada do shared NFS:
 Syncthing roda como servico no boot com historico de ate 30 dias nas replicas.
 Nao altera ~/cluster/shared-files nem promove automaticamente outro servidor
 NFS/Samba. Veja [replicacao](replicacao.md).
+
+O Portainer usa um volume Docker local no worker01. Ele nao replica dados nem
+torna o manager altamente disponivel. Veja [Portainer](portainer.md).
 
 Referências: [Swarm](https://docs.docker.com/engine/swarm/),
 [quorum](https://docs.docker.com/engine/swarm/admin_guide/),
