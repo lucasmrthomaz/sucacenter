@@ -1,0 +1,6 @@
+---
+- import_playbook: playbooks/slurm.yml
+- import_playbook: playbooks/storage.yml
+- import_playbook: playbooks/samba.yml
+- import_playbook: playbooks/gitea.yml
+- import_playbook: playbooks/healthcheck.yml

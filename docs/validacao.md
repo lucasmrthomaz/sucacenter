@@ -12,6 +12,14 @@ distribuído na conversa de origem.
 
 ## Esta versão
 
+A versao unificada 1.1.0 adiciona testes locais de coleta, reexecucao com
+backup, IPs esperados e reutilizacao de Docker pelo Gitea. A sintaxe Bash e
+testada; syntax-check Ansible e conectividade real devem ser executados no
+Linux com `bash sucacenter.sh services validate`. Nenhum servico foi aplicado
+ao cluster durante esta mesclagem. Os 13 testes locais passaram antes da
+publicacao. O resultado do CI remoto deve ser consultado na aba Actions;
+o historico da v1.0.0 teve bloqueio de execucao por cobranca da conta.
+
 Testes verificam sintaxe, preservação de nodes, instalação local repetida,
 propagação de falhas, checksums, roundtrip de arquivo e rejeição de traversal/links.
 Docker/Swarm derivam dos helpers usados no laboratório, mas o pacote refatorado

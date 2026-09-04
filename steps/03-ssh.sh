@@ -8,7 +8,7 @@ while IFS= read -r host; do
   remote "$host" bash -c 'command -v bash && command -v python3 && uname -m'
   remote "$host" mkdir -p cluster/app
   # Pacote operacional: lista explícita, sem .git ou configurações privadas.
-  tar -C "$ROOT" -czf - lib commands steps tests docs config/nodes.example config/settings.example.env sucacenter.sh |
+  tar -C "$ROOT" -czf - lib commands steps tests docs ansible config/nodes.example config/settings.example.env sucacenter.sh |
     ssh -o BatchMode=yes -o ConnectTimeout=8 "$host" 'tar -xzf - -C "$HOME/cluster/app"'
   flags='--local'
   [[ "$SUCACENTER_NO_INSTALL" != 1 ]] || flags="$flags --no-install"

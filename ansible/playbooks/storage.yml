@@ -1,0 +1,155 @@
+---
+# ============================================================
+# SucaCenter - Shared Storage / NFS
+# ============================================================
+
+- name: Configurar servidor NFS
+  hosts: controller
+  become: true
+
+  tasks:
+
+    - name: Instalar servidor NFS
+      ansible.builtin.apt:
+        name: nfs-kernel-server
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Criar diretorio base
+      ansible.builtin.file:
+        path: /srv/sucacenter
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: "0775"
+
+    - name: Criar shared storage
+      ansible.builtin.file:
+        path: /srv/sucacenter/shared
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: "0775"
+
+    - name: Criar diretorio exports.d
+      ansible.builtin.file:
+        path: /etc/exports.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configurar export NFS
+      ansible.builtin.copy:
+        dest: /etc/exports.d/sucacenter.exports
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          /srv/sucacenter/shared 192.168.1.0/24(rw,sync,no_subtree_check)
+      notify:
+        - Recarregar exports
+
+    - name: Garantir exports carregados
+      ansible.builtin.command:
+        cmd: exportfs -ra
+      changed_when: false
+
+    - name: Habilitar servidor NFS
+      ansible.builtin.systemd:
+        name: nfs-kernel-server
+        enabled: true
+        state: started
+
+  handlers:
+
+    - name: Recarregar exports
+      ansible.builtin.command:
+        cmd: exportfs -ra
+
+
+- name: Configurar clientes NFS
+  hosts: workers
+  become: true
+
+  tasks:
+
+    - name: Instalar cliente NFS
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Criar ponto de montagem
+      ansible.builtin.file:
+        path: /mnt/shared
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: "0775"
+
+    - name: Montar shared storage
+      ansible.posix.mount:
+        src: 192.168.1.110:/srv/sucacenter/shared
+        path: /mnt/shared
+        fstype: nfs
+        opts: rw,_netdev
+        state: mounted
+
+
+- name: Criar estrutura compartilhada
+  hosts: controller
+  become: false
+
+  tasks:
+
+    - name: Criar diretorios padrao
+      ansible.builtin.file:
+        path: "/mnt/shared/{{ item }}"
+        state: directory
+        mode: "0775"
+      loop:
+        - input
+        - output
+        - jobs
+        - logs
+        - projects
+        - shared-files
+
+
+- name: Testar shared storage
+  hosts: workers
+  become: false
+
+  tasks:
+
+    - name: Criar arquivo de teste
+      ansible.builtin.copy:
+        content: |
+          Node={{ inventory_hostname }}
+          Host={{ ansible_hostname }}
+          Date={{ ansible_date_time.iso8601 }}
+        dest: "/mnt/shared/test-{{ inventory_hostname }}.txt"
+        mode: "0644"
+
+    - name: Verificar montagem NFS
+      ansible.builtin.command:
+        cmd: findmnt /mnt/shared
+      register: mount_result
+      changed_when: false
+
+    - name: Mostrar montagem
+      ansible.builtin.debug:
+        var: mount_result.stdout_lines
+
+    - name: Listar storage
+      ansible.builtin.command:
+        cmd: ls -lah /mnt/shared
+      register: shared_files
+      changed_when: false
+
+    - name: Mostrar arquivos
+      ansible.builtin.debug:
+        var: shared_files.stdout_lines

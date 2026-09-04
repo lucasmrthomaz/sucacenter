@@ -13,3 +13,9 @@ jobs:
         run: python3 tools/package.py
       - name: Check standalone syntax
         run: bash -n dist/bootstrap-sucacenter.sh
+      - name: Install Ansible validation dependencies
+        run: |
+          python3 -m pip install ansible-core
+          ansible-galaxy collection install ansible.posix
+      - name: Ansible syntax (no remote connections)
+        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check

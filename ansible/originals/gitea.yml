@@ -1,0 +1,198 @@
+---
+# ============================================================
+# SucaCenter - Gitea
+# Git server running on worker01 using Docker Compose
+# ============================================================
+
+- name: Configurar Gitea
+  hosts: controller
+  become: true
+
+  vars:
+    gitea_root: /srv/gitea
+    gitea_data: /srv/gitea/data
+    gitea_compose: /srv/gitea/compose.yml
+    gitea_http_port: 3000
+    gitea_ssh_port: 2222
+    gitea_host: 192.168.1.110
+    gitea_image: gitea/gitea:latest
+
+  tasks:
+
+    # --------------------------------------------------------
+    # Docker
+    # --------------------------------------------------------
+
+    - name: Atualizar cache APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar Docker
+      ansible.builtin.apt:
+        name:
+          - docker.io
+        state: present
+
+    - name: Habilitar Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # --------------------------------------------------------
+    # Detect Docker Compose
+    # --------------------------------------------------------
+
+    - name: Verificar Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose version
+      register: docker_compose_check
+      changed_when: false
+      failed_when: false
+
+    - name: Instalar Docker Compose plugin
+      ansible.builtin.apt:
+        name: docker-compose-v2
+        state: present
+      when: docker_compose_check.rc != 0
+
+    # --------------------------------------------------------
+    # Directories
+    # --------------------------------------------------------
+
+    - name: Criar diretorio raiz do Gitea
+      ansible.builtin.file:
+        path: "{{ gitea_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar diretorio de dados
+      ansible.builtin.file:
+        path: "{{ gitea_data }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
+    # --------------------------------------------------------
+    # Docker Compose
+    # --------------------------------------------------------
+
+    - name: Criar compose.yml
+      ansible.builtin.copy:
+        dest: "{{ gitea_compose }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          services:
+
+            gitea:
+              image: {{ gitea_image }}
+              container_name: gitea
+
+              restart: unless-stopped
+
+              environment:
+
+                USER_UID: 1000
+                USER_GID: 1000
+
+                GITEA__database__DB_TYPE: sqlite3
+
+                GITEA__server__DOMAIN: {{ gitea_host }}
+
+                GITEA__server__ROOT_URL: http://{{ gitea_host }}:{{ gitea_http_port }}/
+
+                GITEA__server__HTTP_PORT: 3000
+
+                GITEA__server__SSH_DOMAIN: {{ gitea_host }}
+
+                GITEA__server__SSH_PORT: {{ gitea_ssh_port }}
+
+                GITEA__server__SSH_LISTEN_PORT: 22
+
+                GITEA__server__START_SSH_SERVER: "true"
+
+              ports:
+
+                - "{{ gitea_http_port }}:3000"
+
+                - "{{ gitea_ssh_port }}:22"
+
+              volumes:
+
+                - "{{ gitea_data }}:/data"
+
+              networks:
+
+                - sucacenter
+
+          networks:
+
+            sucacenter:
+              name: sucacenter
+      notify:
+        - Reiniciar Gitea
+
+    # --------------------------------------------------------
+    # Validate Compose
+    # --------------------------------------------------------
+
+    - name: Validar Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose -f {{ gitea_compose }} config
+      register: compose_validation
+      changed_when: false
+
+    - name: Mostrar validacao Compose
+      ansible.builtin.debug:
+        var: compose_validation.stdout_lines
+
+    # --------------------------------------------------------
+    # Start Gitea
+    # --------------------------------------------------------
+
+    - name: Baixar imagem do Gitea
+      ansible.builtin.command:
+        cmd: docker compose -f {{ gitea_compose }} pull
+      register: docker_pull
+      changed_when: "'Pulled' in docker_pull.stdout or 'Downloaded' in docker_pull.stdout"
+
+    - name: Subir Gitea
+      ansible.builtin.command:
+        cmd: docker compose -f {{ gitea_compose }} up -d
+      register: docker_up
+      changed_when: >
+        'Created' in docker_up.stdout or
+        'Started' in docker_up.stdout or
+        'Recreated' in docker_up.stdout
+
+    # --------------------------------------------------------
+    # Health Check
+    # --------------------------------------------------------
+
+    - name: Esperar Gitea inicializar
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ gitea_http_port }}"
+        timeout: 60
+
+    - name: Verificar container
+      ansible.builtin.command:
+        cmd: docker ps --filter name=gitea --format "{{ '{{' }}.Names{{ '}}' }} | {{ '{{' }}.Status{{ '}}' }}"
+      register: gitea_status
+      changed_when: false
+
+    - name: Mostrar status
+      ansible.builtin.debug:
+        var: gitea_status.stdout_lines
+
+  handlers:
+
+    - name: Reiniciar Gitea
+      ansible.builtin.command:
+        cmd: docker compose -f {{ gitea_compose }} up -d

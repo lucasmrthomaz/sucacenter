@@ -1,0 +1,88 @@
+---
+# ============================================================
+# SucaCenter - Samba / SMB
+# Exposes the existing NFS storage to Windows
+# ============================================================
+
+- name: Configurar Samba no SucaCenter
+  hosts: controller
+  become: true
+
+  vars:
+    samba_share_name: shared
+    samba_path: /srv/sucacenter/shared
+    samba_user: cluster
+
+  tasks:
+
+    - name: Instalar Samba
+      ansible.builtin.apt:
+        name:
+          - samba
+          - samba-common-bin
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Garantir diretorio compartilhado
+      ansible.builtin.file:
+        path: "{{ samba_path }}"
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: "0775"
+
+    - name: Fazer backup inicial do smb.conf
+      ansible.builtin.copy:
+        src: /etc/samba/smb.conf
+        dest: /etc/samba/smb.conf.sucacenter-backup
+        remote_src: true
+        force: false
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configurar share do SucaCenter
+      ansible.builtin.blockinfile:
+        path: /etc/samba/smb.conf
+        marker: "# {mark} SUCACENTER SHARE"
+        block: |
+          [{{ samba_share_name }}]
+             comment = SucaCenter Shared Storage
+             path = {{ samba_path }}
+             browseable = yes
+             read only = no
+             writable = yes
+             guest ok = no
+             valid users = {{ samba_user }}
+             force user = {{ samba_user }}
+             force group = {{ samba_user }}
+             create mask = 0664
+             directory mask = 0775
+             hosts allow = 127. 192.168.1.
+             hosts deny = 0.0.0.0/0
+      notify:
+        - Reiniciar Samba
+
+    - name: Validar smb.conf
+      ansible.builtin.command:
+        cmd: testparm -s
+      register: testparm_result
+      changed_when: false
+
+    - name: Mostrar validacao
+      ansible.builtin.debug:
+        var: testparm_result.stdout_lines
+
+    - name: Habilitar Samba
+      ansible.builtin.systemd:
+        name: smbd
+        enabled: true
+        state: started
+
+  handlers:
+
+    - name: Reiniciar Samba
+      ansible.builtin.systemd:
+        name: smbd
+        state: restarted

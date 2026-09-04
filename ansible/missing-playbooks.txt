@@ -1,0 +1,10 @@
+Source: user-supplied SucaCenter project files
+FOUND: slurm.yml
+FOUND: storage.yml
+FOUND: samba.yml
+FOUND: gitea.yml
+FOUND: inventory.ini
+FOUND: healthcheck.yml
+MISSING: (none)
+All required inputs present. Gitea integration reuses Docker from the base setup.
+The unchanged original Gitea playbook is retained in originals/gitea.yml.

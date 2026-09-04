@@ -1,0 +1,291 @@
+---
+# ============================================================
+# SucaCenter - Slurm + MUNGE Bootstrap
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. Configuração básica dos nós
+# ------------------------------------------------------------
+
+- name: Preparar nós do SucaCenter
+  hosts: workers
+  become: true
+
+  tasks:
+
+    - name: Definir hostname igual ao nome do inventory
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Adicionar nós do cluster ao /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} SUCACENTER"
+        block: |
+          192.168.1.110 worker01
+          192.168.1.103 worker02
+
+    - name: Atualizar cache APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar MUNGE e Slurm
+      ansible.builtin.apt:
+        name:
+          - munge
+          - slurm-wlm
+        state: present
+
+
+# ------------------------------------------------------------
+# 2. Criar chave MUNGE no controller
+# ------------------------------------------------------------
+
+- name: Configurar chave MUNGE no controller
+  hosts: controller
+  become: true
+
+  tasks:
+
+    - name: Verificar se munge.key já existe
+      ansible.builtin.stat:
+        path: /etc/munge/munge.key
+      register: munge_key
+
+    - name: Gerar munge.key
+      ansible.builtin.shell: |
+        umask 077
+        dd if=/dev/urandom \
+           of=/etc/munge/munge.key \
+           bs=1024 \
+           count=1
+      when: not munge_key.stat.exists
+
+    - name: Corrigir proprietário da munge.key
+      ansible.builtin.file:
+        path: /etc/munge/munge.key
+        owner: munge
+        group: munge
+        mode: "0400"
+
+    - name: Ler munge.key
+      ansible.builtin.slurp:
+        src: /etc/munge/munge.key
+      register: munge_key_content
+
+
+# ------------------------------------------------------------
+# 3. Distribuir chave para todos os workers
+# ------------------------------------------------------------
+
+- name: Distribuir MUNGE
+  hosts: workers
+  become: true
+
+  tasks:
+
+    - name: Instalar chave compartilhada MUNGE
+      ansible.builtin.copy:
+        content: "{{ hostvars['worker01']['munge_key_content']['content'] | b64decode }}"
+        dest: /etc/munge/munge.key
+        owner: munge
+        group: munge
+        mode: "0400"
+      notify:
+        - Restart Munge
+
+    - name: Habilitar MUNGE
+      ansible.builtin.systemd:
+        name: munge
+        enabled: true
+        state: started
+
+  handlers:
+
+    - name: Restart Munge
+      ansible.builtin.systemd:
+        name: munge
+        state: restarted
+
+
+# ------------------------------------------------------------
+# 4. Configurar Slurm
+# ------------------------------------------------------------
+
+- name: Configurar Slurm
+  hosts: workers
+  become: true
+
+  tasks:
+
+    - name: Criar diretório de configuração
+      ansible.builtin.file:
+        path: /etc/slurm
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar spool slurmd
+      ansible.builtin.file:
+        path: /var/spool/slurmd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar diretório de logs
+      ansible.builtin.file:
+        path: /var/log/slurm
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: "0755"
+
+    - name: Instalar slurm.conf
+      ansible.builtin.copy:
+        dest: /etc/slurm/slurm.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # ==================================================
+          # SucaCenter Slurm Configuration
+          # Managed by Ansible
+          # ==================================================
+
+          ClusterName=sucacenter
+          SlurmctldHost=worker01
+
+          SlurmctldPort=6817
+          SlurmdPort=6818
+
+          AuthType=auth/munge
+
+          SlurmUser=slurm
+          SlurmdUser=root
+
+          StateSaveLocation=/var/spool/slurmctld
+          SlurmdSpoolDir=/var/spool/slurmd
+
+          SlurmctldLogFile=/var/log/slurm/slurmctld.log
+          SlurmdLogFile=/var/log/slurm/slurmd.log
+
+          SchedulerType=sched/backfill
+
+          SelectType=select/cons_tres
+          SelectTypeParameters=CR_Core_Memory
+
+          ReturnToService=2
+
+          # --------------------------------------------------
+          # worker01
+          # 1 socket
+          # 2 cores
+          # 1 thread/core
+          # --------------------------------------------------
+
+          NodeName=worker01 \
+          NodeAddr=192.168.1.110 \
+          CPUs=2 \
+          Boards=1 \
+          SocketsPerBoard=1 \
+          CoresPerSocket=2 \
+          ThreadsPerCore=1 \
+          RealMemory=3400 \
+          State=UNKNOWN
+
+          # --------------------------------------------------
+          # worker02
+          # 1 socket
+          # 2 cores
+          # 2 threads/core
+          # --------------------------------------------------
+
+          NodeName=worker02 \
+          NodeAddr=192.168.1.103 \
+          CPUs=4 \
+          Boards=1 \
+          SocketsPerBoard=1 \
+          CoresPerSocket=2 \
+          ThreadsPerCore=2 \
+          RealMemory=3400 \
+          State=UNKNOWN
+
+          # --------------------------------------------------
+          # Partition
+          # --------------------------------------------------
+
+          PartitionName=suca \
+          Nodes=worker01,worker02 \
+          Default=YES \
+          MaxTime=INFINITE \
+          State=UP
+
+      notify:
+        - Restart Slurmd
+
+    - name: Habilitar slurmd
+      ansible.builtin.systemd:
+        name: slurmd
+        enabled: true
+        state: started
+
+  handlers:
+
+    - name: Restart Slurmd
+      ansible.builtin.systemd:
+        name: slurmd
+        state: restarted
+
+
+# ------------------------------------------------------------
+# 5. Configurar Controller
+# ------------------------------------------------------------
+
+- name: Configurar Slurm Controller
+  hosts: controller
+  become: true
+
+  tasks:
+
+    - name: Criar spool slurmctld
+      ansible.builtin.file:
+        path: /var/spool/slurmctld
+        state: directory
+        owner: slurm
+        group: slurm
+        mode: "0755"
+
+    - name: Habilitar slurmctld
+      ansible.builtin.systemd:
+        name: slurmctld
+        enabled: true
+        state: restarted
+
+
+# ------------------------------------------------------------
+# 6. Health Check
+# ------------------------------------------------------------
+
+- name: Validar cluster
+  hosts: controller
+  become: true
+
+  tasks:
+
+    - name: Esperar Slurm inicializar
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Mostrar sinfo
+      ansible.builtin.command:
+        cmd: sinfo
+      register: sinfo_result
+      changed_when: false
+
+    - name: Resultado
+      ansible.builtin.debug:
+        var: sinfo_result.stdout_lines

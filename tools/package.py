@@ -9,7 +9,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 paths = []
 for name in ['sucacenter.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
-             '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools']:
+             '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible']:
     item = root / name
     for p in sorted(item.rglob('*')) if item.is_dir() else [item]:
         if not p.is_file() or p.is_symlink() or '__pycache__' in p.parts or p.suffix == '.pyc':
@@ -33,7 +33,7 @@ with tarfile.open(fileobj=buf, mode='w') as tar:
 payload = gzip.compress(buf.getvalue(), mtime=0)
 digest = hashlib.sha256(payload).hexdigest()
 loader = r'''#!/usr/bin/env bash
-# SucaCenter: pacote autocontido; não baixa código nem inclui credenciais.
+# SucaCenter: self-contained bundle; includes lab inventory, no credentials.
 set -euo pipefail
 command -v base64 >/dev/null
 command -v sha256sum >/dev/null
@@ -42,7 +42,7 @@ stage=$(mktemp -d "$HOME/cluster/installations/release.XXXXXX")
 awk 'found {print} /^__SUCACENTER_PAYLOAD__$/ {found=1}' "$0" | base64 -d > "$stage/payload.tar.gz"
 printf '%s  %s\n' 'PAYLOAD_HASH' "$stage/payload.tar.gz" | sha256sum -c -
 tar -xzf "$stage/payload.tar.gz" -C "$stage"
-echo "Pacote extraído em $stage/sucacenter"
+echo "Package extracted to $stage/sucacenter"
 if (($# == 0)); then set -- setup; fi
 exec bash "$stage/sucacenter/sucacenter.sh" "$@"
 exit 1

@@ -1,0 +1,13 @@
+---
+- name: SucaCenter Health Check
+  hosts: workers
+  gather_facts: yes
+
+  tasks:
+    - name: Mostrar status do worker
+      debug:
+        msg: >
+          {{ inventory_hostname }}
+          | Host={{ ansible_hostname }}
+          | CPU={{ ansible_processor_vcpus }}
+          | RAM={{ ansible_memtotal_mb }} MB

@@ -1,5 +1,14 @@
 # Histórico
 
+## 1.1.0
+
+- Integra os cinco playbooks e inventory da tarefa Ansible.
+- Adiciona services prepare|validate|run e setup --services.
+- Mantem IPs 192.168.1.110 e 192.168.1.103, usuario SSH cluster e backups.
+- Gitea reutiliza Docker/Compose da base, com original arquivado.
+- Inclui camada Ansible no ZIP, instalador unico e copia operacional.
+- NFS e sincronizacao local continuam com caminhos e papeis distintos.
+
 ## 1.0.0
 
 - Etapas separadas: preflight, workspace, dependências, SSH, distcc, Docker e Swarm.

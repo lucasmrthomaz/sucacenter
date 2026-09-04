@@ -2,7 +2,31 @@
 
 Laboratório de desenvolvimento com computadores reaproveitados: GNU Parallel,
 distcc + ccache, Docker Engine e Swarm. Instalador modular, comandos operacionais
-e testes. Repositório privado de lucasmrthomaz. Versão 1.0.0.
+e testes, agora com Slurm, NFS, Samba e Gitea via Ansible. Versão 1.1.0.
+
+Fonte oficial: [lucasmrthomaz/sucacenter](https://github.com/lucasmrthomaz/sucacenter).
+Codigo, documentacao e [downloads v1.1.0](https://github.com/lucasmrthomaz/sucacenter/releases/tag/v1.1.0)
+sao mantidos neste mesmo repositorio.
+
+## Versao unificada
+
+As duas tarefas foram integradas neste pacote. Para o cluster que ja tem
+distcc, Docker e Swarm configurados, execute no worker01 como cluster:
+
+    bash sucacenter.sh services validate
+    bash sucacenter.sh services run
+
+Requer Ansible e a colecao ansible.posix no worker01. Para instalar com uma
+conta autorizada: `sudo apt-get install ansible`; como cluster:
+`ansible-galaxy collection install ansible.posix`.
+A conta cluster precisa de sudo autorizado nos dois nos para os playbooks.
+`--ask-become-pass` pede a senha; nao concede permissoes ausentes.
+
+Para uma instalacao base seguida dos servicos: `bash sucacenter.sh setup --services`.
+Use `--grant-docker-access` adicionalmente apenas se desejar conceder esse grupo.
+O setup sem --services continua com o comportamento anterior.
+O comando services usa os arquivos deste pacote por padrao. Leia
+[mesclagem e limites](docs/mesclagem.md) antes da execucao.
 
 ## Comece aqui
 
@@ -14,7 +38,7 @@ operacional não-root. A instalação de serviços exige autorização administr
     cd sucacenter
     bash sucacenter.sh setup --grant-docker-access
 
-O clone privado exige autenticação GitHub. Também pode extrair o ZIP e executar
+Também pode extrair o ZIP da release e executar
 o mesmo comando, sem Git no cluster. Não execute o setup inteiro com sudo.
 O grupo docker concede privilégios equivalentes a root.
 
@@ -46,7 +70,7 @@ Falhas interrompem o setup, preservam logs e retornam erro. Corrija e repita.
 
     python3 tools/package.py
 
-Gera dist/sucacenter-1.0.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
+Gera dist/sucacenter-1.1.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
 O .sh contém o projeto compactado, verifica o payload e extrai uma cópia em
 ~/cluster/installations/, sem baixar código:
 
@@ -74,4 +98,4 @@ são separados porque operam no laboratório. O teste Swarm publica uma aplicaç
 na porta 18080. Confira os comandos de remoção na saída antes de repetir.
 
 Sem senhas, chaves privadas, tokens de Swarm ou dados do usuário no repositório.
-Não há licença de redistribuição concedida por este repositório privado.
+Não há licença de redistribuição concedida por este repositório.
