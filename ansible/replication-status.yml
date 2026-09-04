@@ -1,0 +1,21 @@
+---
+- name: Inspect replication without modifying services or files
+  hosts: workers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Query local replication API
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/lib/sucacenter/replication.py, status]
+      register: replica_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show state without API credentials
+      ansible.builtin.debug:
+        msg: "{{ replica_status.stdout if replica_status.rc in [0, 2] else replica_status.stderr }}"
+
+    - name: Require a connected and synchronized replica with no errors or local edits
+      ansible.builtin.assert:
+        that: replica_status.rc == 0
+        fail_msg: "Replication is not ready. Review the state above; pending/offline is not success."

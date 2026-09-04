@@ -39,6 +39,8 @@ run_step() {
       printf 'prepared-only\n' > "$C/config/state/$name"
     elif [[ "$name" == 08-services && "${SUCACENTER_SERVICES_MODE:---validate}" == --validate ]]; then
       printf 'validated-only\n' > "$C/config/state/$name"
+    elif [[ "$name" == 09-replication ]]; then
+      printf '%s\n' "${SUCACENTER_REPLICATION_MODE:-validate}-completed" > "$C/config/state/$name"
     else
       printf 'ok\n' > "$C/config/state/$name"
     fi
@@ -68,6 +70,7 @@ case "$action" in
       ssh) target=03-ssh;; workspace) target=04-workspace;; distcc) target=05-distcc;;
       docker) target=06-docker;; swarm) target=07-swarm;;
       services) target=08-services;;
+      replication) target=09-replication;;
     esac
     run_step "$target" ;;
   services)
@@ -79,6 +82,13 @@ case "$action" in
       die "--no-install nao permite services run; use services prepare."
     fi
     run_step 08-services ;;
+  replication)
+    case "${target:-validate}" in
+      setup|validate|status) export SUCACENTER_REPLICATION_MODE="${target:-validate}" ;;
+      *) die "Use replication setup|validate|status" ;;
+    esac
+    [[ "$SUCACENTER_REPLICATION_MODE" != setup || "$SUCACENTER_NO_INSTALL" != 1 ]] || die "--no-install prevents replication setup."
+    run_step 09-replication ;;
   doctor|status) bash "$ROOT/commands/cluster" "$action" ;;
   test)
     case "$target" in
@@ -90,7 +100,10 @@ case "$action" in
     esac ;;
   help|--help|-h)
     cat <<'HELP'
-SucaCenter 1.1.0 — Debian/Ubuntu/Linux Mint com systemd
+SucaCenter 1.2.0 — Debian/Ubuntu/Linux Mint com systemd
+  bash sucacenter.sh replication validate         Validar sintaxe e inventory (sem acesso remoto)
+  bash sucacenter.sh replication setup            Replica automatica + historico de 30 dias
+  bash sucacenter.sh replication status           Verificar conexao, progresso e erros
   bash sucacenter.sh services prepare            Coletar playbooks e inventory, com backup
   bash sucacenter.sh services validate           Inventory, syntax-check e ping Ansible
   bash sucacenter.sh services run                Slurm, NFS, Samba, Gitea e healthcheck

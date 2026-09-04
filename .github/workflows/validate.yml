@@ -18,4 +18,7 @@ jobs:
           python3 -m pip install ansible-core
           ansible-galaxy collection install ansible.posix
       - name: Ansible syntax (no remote connections)
-        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+        run: |
+          ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+          ansible-playbook -i ansible/inventory.ini ansible/replication.yml --syntax-check
+          ansible-playbook -i ansible/inventory.ini ansible/replication-status.yml --syntax-check

@@ -1,0 +1,208 @@
+---
+# Separate opt-in playbook: never rerun Slurm/Gitea to add replication.
+- name: Configure local-disk replicas of the existing shared folder
+  hosts: workers
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    replica_role: "{{ 'source' if inventory_hostname == 'worker01' else 'replica' }}"
+    replica_path: "{{ '/srv/sucacenter/shared' if inventory_hostname == 'worker01' else '/srv/sucacenter/replica-shared' }}"
+    replica_days: 30
+    replica_helper: /usr/local/lib/sucacenter/replication.py
+  pre_tasks:
+    - name: Validate inventory and retention
+      ansible.builtin.assert:
+        that:
+          - "groups['controller'] == ['worker01']"
+          - "'worker01' in groups['workers']"
+          - "groups['workers'] | length >= 2"
+          - "hostvars['worker01']['ansible_host'] == '192.168.1.110'"
+          - "hostvars['worker02']['ansible_host'] == '192.168.1.103'"
+          - "replica_days | int >= 1"
+          - "replica_days | int <= 3650"
+
+    - name: Verify existing operational account
+      ansible.builtin.getent:
+        database: passwd
+        key: cluster
+
+    - name: Reject network mounts, symlinks and unmanaged destination data
+      ansible.builtin.script:
+        cmd: "files/replication.py guard --role {{ replica_role }}"
+        executable: /usr/bin/python3
+      changed_when: false
+
+  tasks:
+    - name: Install distribution Syncthing package
+      ansible.builtin.apt:
+        name: syncthing
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create replica parent on destination nodes
+      ansible.builtin.file:
+        path: /srv/sucacenter
+        state: directory
+      when: replica_role == 'replica'
+
+    - name: Create local replica directory
+      ansible.builtin.file:
+        path: /srv/sucacenter/replica-shared
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: '0700'
+      when: replica_role == 'replica'
+
+    - name: Create isolated configuration directory
+      ansible.builtin.file:
+        path: /var/lib/sucacenter-syncthing
+        state: directory
+        owner: cluster
+        group: cluster
+        mode: '0700'
+
+    - name: Create helper directory
+      ansible.builtin.file:
+        path: /usr/local/lib/sucacenter
+        state: directory
+        owner: root
+        mode: '0755'
+
+    - name: Install replication helper
+      ansible.builtin.copy:
+        src: files/replication.py
+        dest: "{{ replica_helper }}"
+        owner: root
+        group: root
+        mode: '0755'
+      notify: Restart SucaCenter Syncthing
+
+    - name: Check operational account access to shared data
+      become_user: cluster
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "import os,sys; sys.exit(0 if os.access(sys.argv[1], os.R_OK|os.W_OK|os.X_OK) else 1)"
+          - "{{ replica_path }}"
+      changed_when: false
+
+    - name: Generate private device identity once
+      become_user: cluster
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ replica_helper }}", initialize, --ip, "{{ ansible_host }}", --role, "{{ replica_role }}"]
+      register: replica_init
+      changed_when: (replica_init.stdout | from_json).changed
+
+    - name: Install dedicated boot service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/sucacenter-syncthing.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=SucaCenter shared-folder replication
+          Wants=network-online.target
+          After=network-online.target
+          RequiresMountsFor={{ replica_path }} /var/lib/sucacenter-syncthing
+
+          [Service]
+          User=cluster
+          Group=cluster
+          ExecStartPre=/usr/bin/python3 {{ replica_helper }} guard --role {{ replica_role }}
+          ExecStart=/usr/bin/python3 {{ replica_helper }} serve
+          Restart=always
+          RestartSec=10
+          UMask=0077
+          Nice=10
+          CPUQuota=50%
+          NoNewPrivileges=true
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart SucaCenter Syncthing
+
+    - name: Detect active UFW without enabling it
+      ansible.builtin.shell: |
+        if command -v ufw >/dev/null 2>&1; then ufw status; fi
+      environment:
+        LC_ALL: C
+      register: replica_ufw
+      changed_when: false
+
+    - name: Allow only cluster peers to reach the replication port when UFW is active
+      ansible.builtin.command:
+        argv: [ufw, allow, from, "{{ hostvars[item]['ansible_host'] }}", to, "{{ ansible_host }}", port, '22001', proto, tcp, comment, SucaCenter-replication]
+      environment:
+        LC_ALL: C
+      loop: "{{ groups['workers'] | difference([inventory_hostname]) }}"
+      when: "'Status: active' in replica_ufw.stdout"
+      register: replica_rule
+      changed_when: "'Skipping' not in replica_rule.stdout"
+
+    - name: Apply changed service definition
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable replication on boot without requiring a login session
+      ansible.builtin.systemd:
+        name: sucacenter-syncthing
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: Read device ID from local authenticated API
+      become_user: cluster
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ replica_helper }}", identity]
+      register: replica_identity
+      changed_when: false
+      retries: 15
+      delay: 2
+      until: replica_identity.rc == 0
+
+    - name: Build explicit pairing list
+      ansible.builtin.set_fact:
+        replica_peers: []
+
+    - name: Pair source with replicas, replicas with source only
+      ansible.builtin.set_fact:
+        replica_peers: "{{ replica_peers + [{'id': (hostvars[item]['replica_identity']['stdout'] | from_json)['id'], 'ip': hostvars[item]['ansible_host'], 'name': item}] }}"
+      loop: "{{ (groups['workers'] | difference(['worker01'])) if replica_role == 'source' else ['worker01'] }}"
+
+    - name: Configure one-way replication and destination history
+      become_user: cluster
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ replica_helper }}", configure, --role, "{{ replica_role }}", --days, "{{ replica_days | string }}"]
+        stdin: "{{ replica_peers | to_json }}"
+      register: replica_config
+      changed_when: (replica_config.stdout | from_json).changed
+
+    - name: Read initial synchronization state
+      become_user: cluster
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, "{{ replica_helper }}", status]
+      register: replica_state
+      changed_when: false
+      failed_when: replica_state.rc not in [0, 2]
+      retries: 15
+      delay: 2
+      until: replica_state.rc in [0, 2]
+
+    - name: Report configured service and initial synchronization state
+      ansible.builtin.debug:
+        msg:
+          - "Replication configured. Initial copy may still be running; ready=false is not a completed replica."
+          - "{{ replica_state.stdout | from_json }}"
+          - "Check later: bash sucacenter.sh replication status"
+
+  handlers:
+    - name: Restart SucaCenter Syncthing
+      ansible.builtin.systemd:
+        name: sucacenter-syncthing
+        daemon_reload: true
+        state: restarted

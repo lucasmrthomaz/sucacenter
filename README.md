@@ -2,11 +2,24 @@
 
 Laboratório de desenvolvimento com computadores reaproveitados: GNU Parallel,
 distcc + ccache, Docker Engine e Swarm. Instalador modular, comandos operacionais
-e testes, agora com Slurm, NFS, Samba e Gitea via Ansible. Versão 1.1.0.
+e testes, agora com Slurm, NFS, Samba, Gitea e replicacao via Ansible. Versão 1.2.0.
 
 Fonte oficial: [lucasmrthomaz/sucacenter](https://github.com/lucasmrthomaz/sucacenter).
-Codigo, documentacao e [downloads v1.1.0](https://github.com/lucasmrthomaz/sucacenter/releases/tag/v1.1.0)
+Codigo, documentacao e [downloads v1.2.0](https://github.com/lucasmrthomaz/sucacenter/releases/tag/v1.2.0)
 sao mantidos neste mesmo repositorio.
+
+## Replica automatica do shared
+
+Para manter uma copia local em cada worker, com historico de ate 30 dias,
+preservando o Samba/NFS existente:
+
+    bash sucacenter.sh replication validate
+    bash sucacenter.sh replication setup
+    bash sucacenter.sh replication status
+
+Configure o storage primeiro. A copia inicial e assincrona; setup nao significa
+que os dados ja foram todos copiados. Leia [replicacao e recuperacao](docs/replicacao.md).
+Essa etapa e explicita e nao e acionada por setup ou services run existentes.
 
 ## Versao unificada
 
@@ -70,7 +83,7 @@ Falhas interrompem o setup, preservam logs e retornam erro. Corrija e repita.
 
     python3 tools/package.py
 
-Gera dist/sucacenter-1.1.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
+Gera dist/sucacenter-1.2.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
 O .sh contém o projeto compactado, verifica o payload e extrai uma cópia em
 ~/cluster/installations/, sem baixar código:
 

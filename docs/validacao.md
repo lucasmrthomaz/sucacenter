@@ -1,5 +1,18 @@
 # Validação
 
+## Replicacao v1.2.0
+
+Em 2026-09-04 passaram 20 testes unitarios em Linux, sintaxe Bash e syntax-check
+Ansible de site.yml, replication.yml e replication-status.yml (ansible-core
+2.21.3). Um teste isolado com duas instancias reais de Syncthing 1.29.5 tambem
+confirmou copia, atualizacao, exclusao com historico, reconfiguracao idempotente
+e deteccao de alteracoes locais na replica receiveonly.
+
+O teste usa loopback e pastas temporarias locais, sem SSH, sudo ou systemd.
+A instalacao nos dois computadores do laboratorio ainda deve ser executada e
+verificada pelo usuario. CI remoto pode continuar bloqueado pela conta GitHub;
+nao confunda esse estado com os testes locais descritos acima.
+
 ## Evidências do laboratório original
 
 O usuário confirmou SSH para o Samsung, GCC 13.3.0 idêntico, compilação remota

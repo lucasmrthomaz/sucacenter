@@ -1,5 +1,15 @@
 # Histórico
 
+## 1.2.0
+
+- Replicacao automatica e unidirecional do shared com Syncthing.
+- Historico de ate 20 versoes por arquivo / 30 dias nas replicas, em discos locais.
+- Comandos replication validate|setup|status e servico systemd independente.
+- Preserva Samba/NFS; nao altera Docker, Gitea, Slurm ou arquivos existentes.
+- Recusa destino NFS, links, pastas nao gerenciadas e mudanca de disco.
+- GUI somente loopback, pareamento por IDs e trafego apenas entre IPs LAN.
+- Testes de idempotencia, protecao de caminhos e sincronizacao real isolada.
+
 ## 1.1.0
 
 - Integra os cinco playbooks e inventory da tarefa Ansible.

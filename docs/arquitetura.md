@@ -33,6 +33,12 @@ versões sobrescritas vão para backups. sync-pull guarda os workers separados.
 Não é sincronização bidirecional nem backup com retenção automática. Nunca
 sincronize bancos/volumes ativos com rsync.
 
+A etapa opcional replication acrescenta uma replica separada do shared NFS:
+/srv/sucacenter/shared no worker01 -> /srv/sucacenter/replica-shared nos demais.
+Syncthing roda como servico no boot com historico de ate 30 dias nas replicas.
+Nao altera ~/cluster/shared-files nem promove automaticamente outro servidor
+NFS/Samba. Veja [replicacao](replicacao.md).
+
 Referências: [Swarm](https://docs.docker.com/engine/swarm/),
 [quorum](https://docs.docker.com/engine/swarm/admin_guide/),
 [distcc](https://www.distcc.org/man/distcc_1.html),
