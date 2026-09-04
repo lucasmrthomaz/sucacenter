@@ -1,0 +1,77 @@
+# SucaCenter
+
+Laboratório de desenvolvimento com computadores reaproveitados: GNU Parallel,
+distcc + ccache, Docker Engine e Swarm. Instalador modular, comandos operacionais
+e testes. Repositório privado de lucasmrthomaz. Versão 1.0.0.
+
+## Comece aqui
+
+Leia [instalação](docs/instalacao.md) antes de usar em máquinas novas.
+Requer Linux Mint/Ubuntu/Debian com systemd, Bash 4+, Python 3.9+, SSH e conta
+operacional não-root. A instalação de serviços exige autorização administrativa.
+
+    git clone https://github.com/lucasmrthomaz/sucacenter.git
+    cd sucacenter
+    bash sucacenter.sh setup --grant-docker-access
+
+O clone privado exige autenticação GitHub. Também pode extrair o ZIP e executar
+o mesmo comando, sem Git no cluster. Não execute o setup inteiro com sudo.
+O grupo docker concede privilégios equivalentes a root.
+
+Para preparar somente arquivos, sem configurar serviços:
+
+    bash sucacenter.sh setup --no-install
+
+Configuração: ~/cluster/config/settings.env e ~/cluster/nodes. Arquivos existentes
+são preservados. Exemplos: manager 192.168.1.110; worker cluster@192.168.1.103.
+Em outra rede, execute step workspace e edite esses arquivos antes do setup.
+
+## Operação
+
+    bash sucacenter.sh status
+    bash sucacenter.sh doctor
+    bash sucacenter.sh step distcc
+    bash sucacenter.sh step docker --grant-docker-access
+    bash sucacenter.sh step swarm
+    bash sucacenter.sh test distcc
+    bash sucacenter.sh test benchmark
+    bash sucacenter.sh test swarm
+    cluster-help
+
+Etapas completas, falhas e etapas puladas ficam em ~/cluster/config/state.
+Cada execução verifica/reexecuta as etapas; marcadores antigos não pulam checks.
+Falhas interrompem o setup, preservam logs e retornam erro. Corrija e repita.
+
+## ZIP e instalador único
+
+    python3 tools/package.py
+
+Gera dist/sucacenter-1.0.0.zip, dist/bootstrap-sucacenter.sh e SHA256SUMS.
+O .sh contém o projeto compactado, verifica o payload e extrai uma cópia em
+~/cluster/installations/, sem baixar código:
+
+    bash bootstrap-sucacenter.sh setup --grant-docker-access
+
+Pacotes apt e imagens Docker ainda precisam de internet. Não é uma imagem de
+disco nem instalador offline de todas as dependências.
+
+## Documentação
+
+- [Instalação](docs/instalacao.md)
+- [Arquitetura](docs/arquitetura.md)
+- [Comandos](docs/comandos.md)
+- [Problemas comuns](docs/problemas-comuns.md)
+- [Backup e restauração](docs/backup-restauracao.md)
+- [Validação e histórico](docs/validacao.md)
+- [Mudanças](CHANGELOG.md)
+
+## Validação
+
+    bash tests/unit.sh
+
+Verifica sintaxe/regressões sem configurar hosts reais. Os testes distcc e swarm
+são separados porque operam no laboratório. O teste Swarm publica uma aplicação
+na porta 18080. Confira os comandos de remoção na saída antes de repetir.
+
+Sem senhas, chaves privadas, tokens de Swarm ou dados do usuário no repositório.
+Não há licença de redistribuição concedida por este repositório privado.

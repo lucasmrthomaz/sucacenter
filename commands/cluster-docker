@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export LC_ALL=C
+self=$(readlink -f -- "$0")
+action="${1:-help}"
+case "$(basename "$0")" in
+  cluster-docker-status) set -- status "$@" ;;
+  cluster-compose) set -- compose "$@" ;;
+esac
+action="${1:-help}"
+if (($#)); then shift; fi
+# Usa exclusivamente o daemon local. Não segue DOCKER_HOST/contextos externos.
+docker_local() {
+  env -u DOCKER_HOST -u DOCKER_CONTEXT docker --host unix:///var/run/docker.sock "$@"
+}
+need() { command -v "$1" >/dev/null || { echo "Falta: $1" >&2; return 1; }; }
+if [[ "$action" == compose ]]; then
+  need docker
+  docker_local compose version >/dev/null
+  docker_local compose "$@"
+  exit
+fi
+
+all=no; no_install=no; grant=no; target_user=$(id -un)
+while (($#)); do
+  case "$1" in
+    --all) all=yes ;;
+    --no-install) no_install=yes ;;
+    --grant-docker-access) grant=yes ;;
+    --user) shift; target_user="${1:?Informe o usuário depois de --user}" ;;
+    *) echo "Opção desconhecida: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+status_local() {
+  echo "=== $(hostname): Docker local ==="
+  if ! command -v docker >/dev/null; then echo "AUSENTE: Docker CLI"; return 1; fi
+  docker --version
+  if ! timeout 15 env -u DOCKER_HOST -u DOCKER_CONTEXT docker \
+      --host unix:///var/run/docker.sock info \
+      --format 'Engine={{.ServerVersion}} | CPUs={{.NCPU}} | RAM={{.MemTotal}} bytes | Swarm={{.Swarm.LocalNodeState}}'; then
+    echo "SEM ACESSO AO ENGINE: verifique serviço e permissões de /var/run/docker.sock."
+    return 1
+  fi
+  if ! docker_local compose version; then
+    echo "Compose v2 indisponível (o Engine pode funcionar sem ele)."
+    return 1
+  fi
+}
+install_local() {
+  need apt-get || return 1
+  need systemctl || return 1
+  # Escala somente esta instalação de sistema; não executa o bootstrap como root.
+  if (( EUID != 0 )); then
+    need sudo || return 1
+    local args=(install --user "$target_user")
+    if [[ "$grant" == yes ]]; then args+=(--grant-docker-access); fi
+    if ! sudo bash "$self" "${args[@]}"; then
+      echo "Instalação pendente. Um administrador deve executar nesta máquina:" >&2
+      printf 'sudo bash %q install --user %q' "$self" "$target_user" >&2
+      if [[ "$grant" == yes ]]; then printf ' --grant-docker-access' >&2; fi
+      printf '\n' >&2
+      return 1
+    fi
+    return
+  fi
+  id "$target_user" >/dev/null || return 1
+  # Não troca uma instalação existente de Docker CE, Snap ou outro runtime.
+  if ! command -v dockerd >/dev/null; then
+    if command -v docker >/dev/null || command -v podman >/dev/null; then
+      echo "CLI Docker/outro runtime existente sem dockerd no PATH; revisar instalação antes de substituir." >&2
+      return 1
+    fi
+    apt-get update || return 1
+    apt-get install -y --no-remove docker.io || return 1
+  fi
+  need docker || return 1
+  # Mantém a família de pacotes do Engine existente.
+  if ! docker_local compose version >/dev/null 2>&1; then
+    local candidate="" package="" release=""
+    apt-get update || return 1
+    if dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -qx 'install ok installed'; then
+      candidate=docker-compose-plugin
+    else
+      for package in docker-compose-v2 docker-compose; do
+        release=$(apt-cache policy "$package" | awk '/Candidate:/ {print $2}')
+        release="${release#*:}"
+        # docker-compose 1.x não é o plugin Compose v2.
+        if [[ "$release" =~ ^([0-9]+)\. ]] && (( BASH_REMATCH[1] >= 2 )); then
+          candidate="$package"; break
+        fi
+      done
+    fi
+    if [[ -n "$candidate" ]]; then
+      apt-get install -y --no-remove "$candidate" || return 1
+    else
+      echo "Compose v2 não encontrado nos repositórios configurados; Engine será preparado."
+    fi
+  fi
+  systemctl enable --now docker || return 1
+  docker_local info >/dev/null || return 1
+  if [[ "$grant" == yes && "$target_user" != root ]]; then
+    echo "Concedendo a $target_user acesso equivalente a root pelo grupo docker."
+    getent group docker >/dev/null || groupadd docker || return 1
+    usermod -aG docker "$target_user" || return 1
+    echo "Abra uma NOVA sessão SSH para que a associação ao grupo tenha efeito."
+  else
+    echo "Acesso ao grupo docker não alterado. Use sudo docker ou --grant-docker-access."
+  fi
+  echo "ENGINE LOCAL INSTALADO E RESPONDENDO."
+  docker_local compose version || { echo "PENDENTE: plugin Compose."; return 1; }
+}
+test_local() {
+  status_local || return 1
+  # Baixa a imagem de diagnóstico se necessário; não publica portas nem volumes.
+  docker_local run --rm --network none --memory 64m --cpus 0.5 hello-world
+}
+setup_local() {
+  if [[ "$no_install" == yes ]]; then
+    echo "Comandos preparados em $(hostname); instalação de pacotes não solicitada."
+  else
+    install_local
+  fi
+}
+each_node() {
+  local failed=0 node="" quoted_action="" command="" count=0
+  local nodes="$HOME/cluster/nodes"
+  local flags=""
+  if [[ "$no_install" == yes ]]; then flags="$flags --no-install"; fi
+  if [[ "$grant" == yes ]]; then flags="$flags --grant-docker-access"; fi
+  if ! "$1"; then failed=1; fi
+  if [[ "$all" != yes ]]; then return "$failed"; fi
+  need ssh || return 1
+  [[ -f "$nodes" ]] || { echo "Arquivo ausente: $nodes" >&2; return 1; }
+  # FD separado evita que SSH consuma a lista de hosts. ":" é sempre local.
+  while IFS= read -r node <&3 || [[ -n "$node" ]]; do
+    node="${node%$'\r'}"
+    [[ -z "$node" || "$node" == \#* || "$node" == : || "$node" == localhost ]] && continue
+    # Contrato de nodes: user@host ou host, sem opções ou comandos de shell.
+    if [[ ! "$node" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$ ]]; then
+      echo "Host inválido em nodes: $node" >&2; failed=1; continue
+    fi
+    count=$((count + 1))
+    echo "=== Worker: $node ==="
+    if [[ "$action" == setup ]]; then
+      need scp || return 1
+      if ! ssh -o BatchMode=yes -o ConnectTimeout=8 "$node" \
+          'umask 077; mkdir -p "$HOME/cluster/scripts" "$HOME/bin"' </dev/null; then
+        echo "Worker inacessível: $node" >&2; failed=1; continue
+      fi
+      if ! scp -q -o BatchMode=yes -o ConnectTimeout=8 "$self" "$node:cluster/scripts/cluster-docker"; then
+        failed=1; continue
+      fi
+      if ! ssh -o BatchMode=yes -o ConnectTimeout=8 "$node" '
+          bash -n "$HOME/cluster/scripts/cluster-docker" &&
+          chmod +x "$HOME/cluster/scripts/cluster-docker" &&
+          ln -sfn "$HOME/cluster/scripts/cluster-docker" "$HOME/bin/cluster-docker" &&
+          ln -sfn "$HOME/cluster/scripts/cluster-docker" "$HOME/bin/cluster-docker-status" &&
+          ln -sfn "$HOME/cluster/scripts/cluster-docker" "$HOME/bin/cluster-compose"
+        ' </dev/null; then failed=1; continue; fi
+    fi
+    printf -v quoted_action '%q' "$action"
+    command="bash \"\$HOME/cluster/scripts/cluster-docker\" $quoted_action$flags"
+    # sudo remoto só pode pedir senha se houver um terminal disponível.
+    if [[ "$action" == setup && "$no_install" == no && -t 0 ]]; then
+      if ! ssh -tt -o BatchMode=yes -o ConnectTimeout=8 "$node" "$command"; then failed=1; fi
+    else
+      if ! ssh -n -o BatchMode=yes -o ConnectTimeout=8 "$node" "$command"; then failed=1; fi
+    fi
+  done 3< "$nodes"
+  echo "Workers percorridos: $count"
+  return "$failed"
+}
+case "$action" in
+  setup) each_node setup_local ;;
+  install)
+    [[ "$all" == no ]] || { echo "Para todas as máquinas, use setup --all."; exit 2; }
+    install_local ;;
+  status) each_node status_local ;;
+  test) each_node test_local ;;
+  help)
+    cat <<'HELP'
+Docker do SucaCenter:
+  cluster-docker setup --all --no-install       Copiar comandos aos workers
+  cluster-docker setup --all                    Instalar Engine + Compose onde possível
+  cluster-docker setup --all --grant-docker-access
+                                                Também liberar o grupo docker (equivale a root)
+  cluster-docker-status --all                   Verificar Engine/acesso/Compose/Swarm
+  cluster-docker test --all                     Rodar hello-world nas máquinas
+  cluster-compose up -d                        Compose no daemon local
+Administrador em cada máquina:
+  sudo bash /home/cluster/cluster/scripts/cluster-docker install --user cluster --grant-docker-access
+
+Sem Swarm, Compose usa apenas uma máquina. Para Swarm: cluster-swarm setup.
+Este módulo não remove containers/volumes nem altera firewall ou daemon.json.
+SSH usa autenticação já configurada e exige hosts conhecidos.
+HELP
+    ;;
+  *) echo "Comando desconhecido: $action" >&2; exit 2 ;;
+esac

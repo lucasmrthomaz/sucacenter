@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set +x
+set -euo pipefail
+export LC_ALL=C
+self=$(readlink -f -- "$0")
+mode="${1:-setup}"
+manager="${SUCACENTER_MANAGER_IP:-192.168.1.110}"
+ssh_options=(-o BatchMode=yes -o ConnectTimeout=8)
+priv=()
+access() {
+  if ! command -v docker >/dev/null; then
+    echo "Docker ausente em $(hostname). Execute a etapa docker por uma conta autorizada." >&2
+    return 1
+  fi
+  if timeout 15 env -u DOCKER_HOST -u DOCKER_CONTEXT docker --host unix:///var/run/docker.sock info >/dev/null 2>&1; then
+    priv=()
+  elif sudo -n docker --host unix:///var/run/docker.sock info >/dev/null 2>&1; then
+    priv=(sudo -n)
+  else
+    echo "Sem acesso ao Docker em $(hostname). Diagnóstico:" >&2
+    id >&2
+    ls -l /var/run/docker.sock >&2 || true
+    systemctl is-active docker >&2 || true
+    echo "Se o serviço está ativo e o socket é root:docker, autorize o grupo docker e abra NOVA sessão SSH." >&2
+    return 1
+  fi
+}
+d() { env -u DOCKER_HOST -u DOCKER_CONTEXT "${priv[@]}" docker --host unix:///var/run/docker.sock "$@"; }
+valid_ip() {
+  local ip="$1" octet
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  local -a octets
+  IFS=. read -r -a octets <<< "$ip"
+  for octet in "${octets[@]}"; do ((10#$octet <= 255)) || return 1; done
+}
+# firewall nunca desabilita regras existentes nem abre portas para toda a LAN.
+if [[ "$mode" == firewall ]]; then
+  shift
+  if ! command -v ufw >/dev/null; then
+    echo "UFW ausente em $(hostname); nenhum firewall alterado."
+    exit 0
+  fi
+  if [[ -r /etc/ufw/ufw.conf ]] && grep -q '^ENABLED=no' /etc/ufw/ufw.conf; then
+    echo "UFW desabilitado; nenhuma regra alterada."
+    exit 0
+  fi
+  if (( EUID != 0 )); then
+    exec sudo bash "$self" firewall "$@"
+  fi
+  state=$(ufw status)
+  if [[ "$state" != *"Status: active"* ]]; then echo "UFW inativo; nenhuma regra necessária."; exit 0; fi
+  for peer in "$@"; do
+    valid_ip "$peer" || { echo "IP inválido: $peer" >&2; exit 2; }
+    for rule in 2377/tcp 7946/tcp 7946/udp 4789/udp; do
+      ufw allow from "$peer" to any port "${rule%/*}" proto "${rule#*/}" comment SucaCenter-Swarm
+    done
+  done
+  exit
+fi
+access
+if [[ "$mode" == probe ]]; then
+  d info --format '{{.Swarm.LocalNodeState}}|{{.Swarm.ControlAvailable}}|{{.Swarm.NodeID}}'
+  exit
+fi
+if [[ "$mode" == join ]]; then
+  manager="${2:?IP do manager}"
+  valid_ip "$manager" || exit 2
+  IFS= read -r token
+  [[ "$token" == SWMTKN-* ]] || { echo "Token ausente/inválido." >&2; exit 2; }
+  [[ $(d info --format '{{.Swarm.LocalNodeState}}') == inactive ]] || {
+    echo "Worker mudou de estado; nenhuma saída de Swarm será forçada." >&2; exit 1;
+  }
+  # O segredo chega pelo stdin do SSH: não é salvo nem incluído no comando SSH.
+  if ! d swarm join --token "$token" "$manager:2377" >/dev/null; then
+    unset token; echo "Falha ao ingressar no manager $manager." >&2; exit 1
+  fi
+  unset token
+  d info --format '{{.Swarm.NodeID}}'
+  exit
+fi
+if [[ "$mode" == status ]]; then d node ls; exit; fi
+[[ "$mode" == setup ]] || { echo "Uso: cluster-swarm [setup|status]"; exit 2; }
+valid_ip "$manager" || { echo "IP do manager inválido." >&2; exit 2; }
+# Evita inicializar o cluster na máquina errada.
+ip -4 -o addr show | awk '{split($4,a,"/"); print a[1]}' | grep -qx "$manager" || {
+  echo "Este host não possui o IP $manager. Execute no Vostro ou ajuste SUCACENTER_MANAGER_IP." >&2; exit 1;
+}
+nodes="$HOME/cluster/nodes"
+[[ -f "$nodes" ]] || { echo "Arquivo ausente: $nodes" >&2; exit 1; }
+declare -a hosts=() ips=() states=() ids=()
+declare -A seen=()
+local_state=$(d info --format '{{.Swarm.LocalNodeState}}')
+local_manager=$(d info --format '{{.Swarm.ControlAvailable}}')
+if [[ "$local_state" != inactive && ! ( "$local_state" == active && "$local_manager" == true ) ]]; then
+  echo "O host local já é worker ou está em estado intermediário; não será recriado." >&2; exit 1
+fi
+if [[ "$local_state" == active ]]; then
+  actual=$(d info --format '{{.Swarm.NodeAddr}}')
+  [[ "$actual" == "$manager" ]] || { echo "Manager existente usa $actual, não $manager."; exit 1; }
+fi
+echo "Verificando todos os workers antes de criar ou alterar o Swarm..."
+while IFS= read -r node <&3 || [[ -n "$node" ]]; do
+  node="${node%$'\r'}"
+  [[ -z "$node" || "$node" == \#* || "$node" == : ]] && continue
+  [[ "$node" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$ ]] || { echo "Host inválido: $node"; exit 2; }
+  peer="${node##*@}"
+  # IPs explícitos permitem restringir as regras de firewall aos nós exatos.
+  valid_ip "$peer" || { echo "Para Swarm, use usuario@IPv4 em nodes: $node" >&2; exit 2; }
+  [[ "$peer" == "$manager" ]] && continue
+  [[ -v "seen[$peer]" ]] && continue
+  seen[$peer]=1
+  ssh "${ssh_options[@]}" -n "$node" 'mkdir -p "$HOME/cluster/scripts" "$HOME/bin"'
+  scp -q "${ssh_options[@]}" "$self" "$node:cluster/scripts/cluster-swarm"
+  ssh "${ssh_options[@]}" -n "$node" '
+    bash -n "$HOME/cluster/scripts/cluster-swarm" &&
+    chmod +x "$HOME/cluster/scripts/cluster-swarm" &&
+    ln -sfn "$HOME/cluster/scripts/cluster-swarm" "$HOME/bin/cluster-swarm"
+  '
+  probe=$(ssh "${ssh_options[@]}" -n "$node" 'bash "$HOME/cluster/scripts/cluster-swarm" probe')
+  IFS='|' read -r state control node_id <<< "$probe"
+  if [[ "$state" == active ]]; then
+    if [[ "$local_state" != active ]] || ! d node inspect "$node_id" >/dev/null 2>&1; then
+      echo "$node pertence a outro Swarm. Não será removido nem migrado automaticamente." >&2; exit 1
+    fi
+    [[ "$control" == false ]] || { echo "$node já é manager; não será rebaixado." >&2; exit 1; }
+  elif [[ "$state" != inactive ]]; then
+    echo "$node tem estado inesperado: $state" >&2; exit 1
+  fi
+  hosts+=("$node"); ips+=("$peer"); states+=("$state"); ids+=("$node_id")
+done 3< "$nodes"
+(("${#hosts[@]}" > 0)) || { echo "Nenhum worker IPv4 encontrado em nodes." >&2; exit 1; }
+# Com UFW ativo, pede sudo somente para regras restritas aos peers.
+bash "$self" firewall "${ips[@]}"
+for i in "${!hosts[@]}"; do
+  flags=""
+  for peer in "$manager" "${ips[@]}"; do
+    [[ "$peer" == "${ips[$i]}" ]] || flags="$flags $peer"
+  done
+  remote="bash \"\$HOME/cluster/scripts/cluster-swarm\" firewall$flags"
+  if [[ -t 0 ]]; then
+    ssh -tt "${ssh_options[@]}" "${hosts[$i]}" "$remote"
+  else
+    ssh -n "${ssh_options[@]}" "${hosts[$i]}" "$remote"
+  fi
+done
+if [[ "$local_state" == inactive ]]; then
+  # Docker imprime tokens ao inicializar; suprime a saída de sucesso.
+  d swarm init --advertise-addr "$manager" >/dev/null
+  echo "Manager iniciado: $manager"
+else
+  echo "Manager existente preservado: $manager"
+fi
+token=$(d swarm join-token --quiet worker)
+for i in "${!hosts[@]}"; do
+  if [[ "${states[$i]}" == inactive ]]; then
+    # Sem pseudo-TTY: o token não é ecoado pelo terminal remoto.
+    if ! node_id=$(printf '%s\n' "$token" | ssh -T "${ssh_options[@]}" "${hosts[$i]}" \
+        "bash \"\$HOME/cluster/scripts/cluster-swarm\" join $manager"); then
+      unset token; echo "Adesão falhou. Corrija o erro e execute novamente; os nós já configurados serão preservados." >&2
+      exit 1
+    fi
+    ids[$i]="$node_id"
+    echo "Worker cadastrado: ${hosts[$i]}"
+  else
+    echo "Worker já pertence ao cluster: ${hosts[$i]}"
+  fi
+done
+unset token
+# Aguarda estado Ready/Active de cada worker, com prazo finito.
+for i in "${!ids[@]}"; do
+  ready=no
+  for ((attempt=0; attempt<30; attempt++)); do
+    result=$(d node inspect "${ids[$i]}" --format '{{.Status.State}}|{{.Spec.Availability}}' 2>/dev/null || true)
+    if [[ "$result" == "ready|active" ]]; then ready=yes; break; fi
+    sleep 2
+  done
+  [[ "$ready" == yes ]] || { echo "Worker ${hosts[$i]} ainda não está Ready/Active: $result" >&2; exit 1; }
+done
+d node ls
+echo "SWARM PRONTO: manager $manager + ${#hosts[@]} worker(s)."
+echo "A rede overlay/aplicações ainda precisa ser testada com um serviço."

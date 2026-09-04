@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Dispatcher comum: preserva argumentos e códigos de erro dos programas.
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "$(readlink -f -- "$0")")/.." && pwd)
+export SUCACENTER_ROOT="$ROOT"
+source "$ROOT/lib/common.sh"
+name=$(basename "$0")
+if [[ "$name" == cluster-* ]]; then action="${name#cluster-}"; else action="${1:-help}"; if (($#)); then shift; fi; fi
+case "$action" in
+  help)
+    cat <<'HELP'
+SucaCenter — comandos operacionais (sem sudo implícito, exceto ações administrativas)
+  cluster-run COMANDO ARGS...                  GNU Parallel em nodes; jobs por linha no stdin
+  cluster-exec COMANDO ARGS...                 Executar em todos, preservando argumentos
+  cluster-status | cluster-info | cluster-health | cluster-doctor
+  cluster-sync-push [DIR] | cluster-sync-pull   Push central; pull em pastas separadas
+  cluster-checksum [DIR] [MANIFEST]            Gerar SHA-256
+  cluster-verify DIR MANIFEST                 Verificar SHA-256
+  cluster-archive ORIGEM DESTINO.tar.gz        Também: cluster-compress
+  cluster-decompress ARQUIVO DIR_NOVO          Extração sem links/caminhos externos
+  cluster-image-convert ORIGEM DESTINO [png]
+  cluster-image-resize ORIGEM DESTINO [1280]
+  cluster-image-optimize ORIGEM DESTINO [85]
+  cluster-video ORIGEM DESTINO | cluster-audio ORIGEM DESTINO
+  cluster-build LINGUAGEM [PROJETO] [ARGS...]  Ou cluster-build-rust etc.
+  cluster-test [PROJETO] [ARGS...] | cluster-lint [PROJETO] [ARGS...]
+  cluster-burn [SEGUNDOS=60]                  Carga limitada, termina automaticamente
+  cluster-install PACOTE... | cluster-update  apt com autorização administrativa
+  cluster-clean                              Limpeza administrada pelo ccache
+  cluster-reboot --yes | cluster-shutdown --yes  Somente a máquina atual
+  cluster-jobs | cluster-queue                Estrutura de fila; sem daemon
+  cluster-logs [QUANTIDADE=100]
+  cluster-docker help | cluster-swarm status
+HELP
+    ;;
+  init) bash "$ROOT/steps/04-workspace.sh" ;;
+  run)
+    need parallel; [[ -f "$C/nodes" ]] || die "Arquivo nodes ausente."
+    # Sem --will-cite: não registra aceitação de termos em nome do usuário.
+    exec parallel --halt soon,fail=1 --sshloginfile "$C/nodes" "$@" ;;
+  exec)
+    (($#)) || die "Informe comando e argumentos."
+    failed=0
+    echo "=== local ==="; "$@" || failed=1
+    while IFS= read -r host; do echo "=== $host ==="; remote "$host" "$@" || failed=1; done < <(nodes)
+    exit "$failed" ;;
+  status)
+    hostname; uptime
+    failed=0
+    while IFS= read -r host; do echo "=== $host ==="; remote "$host" uptime || failed=1; done < <(nodes)
+    exit "$failed" ;;
+  info|health) hostname; uname -a; nproc; free -h; df -h "$HOME"; uptime ;;
+  capabilities|inventory|doctor)
+    failed=0
+    for tool in ssh rsync parallel gcc g++ distcc ccache python3 ffmpeg convert docker; do
+      if command -v "$tool" >/dev/null; then printf 'OK %s\n' "$tool"; else printf 'MISSING %s\n' "$tool"; failed=1; fi
+    done
+    if command -v docker >/dev/null; then
+      timeout 15 env -u DOCKER_HOST -u DOCKER_CONTEXT docker --host unix:///var/run/docker.sock info \
+        --format 'Engine={{.ServerVersion}} Swarm={{.Swarm.LocalNodeState}}' || failed=1
+    fi
+    exit "$failed" ;;
+  sync-push)
+    need rsync
+    src=$(realpath "${1:-$C/shared-files}")
+    [[ -d "$src" ]] || die "Origem precisa ser diretório."
+    while IFS= read -r host; do
+      remote "$host" mkdir -p cluster/shared-files
+      rsync -a --protect-args -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+        --backup --backup-dir="../sync-backup-$(date +%Y%m%d-%H%M%S)-$$" \
+        "$src/" "$host:cluster/shared-files/"
+    done < <(nodes) ;;
+  sync-pull)
+    need rsync
+    mkdir -p "$C/shared-files/from-workers"
+    while IFS= read -r host; do
+      dest="$C/shared-files/from-workers/${host//@/_}"; mkdir -p "$dest"
+      rsync -a --protect-args -e 'ssh -o BatchMode=yes -o ConnectTimeout=8' \
+        --backup --backup-dir="../pull-backup-$(date +%Y%m%d-%H%M%S)-$$" \
+        "$host:cluster/shared-files/" "$dest/"
+    done < <(nodes) ;;
+  shared-status) exec bash "$ROOT/commands/cluster" exec bash -c 'du -sh "$HOME/cluster/shared-files"' ;;
+  checksum|verify|archive|compress|decompress|image-convert|image-resize|image-optimize|video|audio)
+    exec python3 "$ROOT/lib/files.py" "$action" "$@" ;;
+  burn) exec python3 "$ROOT/lib/burn.py" "${1:-60}" ;;
+  build|build-*|test|lint) exec bash "$ROOT/lib/build.sh" "$action" "$@" ;;
+  update) sudo_cmd apt-get update ;;
+  install) (($#)) || die "Informe pacotes."; sudo_cmd apt-get install -y --no-remove "$@" ;;
+  clean) need ccache; ccache --cleanup; ccache --show-stats ;;
+  reboot|shutdown)
+    [[ "${1:-}" == --yes ]] || die "Ação LOCAL; use --yes para confirmar."
+    if [[ "$action" == reboot ]]; then sudo_cmd systemctl reboot; else sudo_cmd systemctl poweroff; fi ;;
+  logs)
+    count="${1:-100}"; [[ "$count" =~ ^[1-9][0-9]*$ ]] || die "Quantidade inválida."
+    find "$C/logs" -maxdepth 1 -type f -name '*.log' -exec tail -n "$count" -- {} + ;;
+  jobs|queue)
+    echo "Fila: estrutura de diretórios; execução automática ainda não implementada."
+    mkdir -p "$C/jobs"/{pending,running,done,failed}; ls -la "$C/jobs" ;;
+  *) die "Comando desconhecido: $action" ;;
+esac
