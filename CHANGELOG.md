@@ -1,5 +1,12 @@
 # Histórico
 
+## Não lançado
+
+- Instalador autônomo bootstrap-monitoring.sh para Prometheus, Grafana e Node Exporter.
+- Dashboard OnePage, credencial gerada, backups de configuração e dados persistentes.
+- Porta alternativa automática para coexistir com o Gitea e documentação de operação.
+- Script incluído no pacote distribuível e testes de geração sem acesso ao cluster.
+
 ## 1.3.0
 
 - Portainer CE LTS como stack opcional do Docker Swarm.
