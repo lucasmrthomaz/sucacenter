@@ -1,0 +1,7 @@
+[dist]
+scheduler_url = "{{ sccache_scheduler_url }}"
+toolchains = []
+toolchain_cache_size = {{ sccache_toolchain_cache_bytes }}
+[dist.auth]
+type = "token"
+token = "{{ (sccache_secrets.content | b64decode | from_json).client_token }}"

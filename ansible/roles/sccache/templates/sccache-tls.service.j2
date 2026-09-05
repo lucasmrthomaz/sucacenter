@@ -1,0 +1,16 @@
+[Unit]
+Description=SucaCenter sccache scheduler TLS proxy
+Wants=network-online.target sccache-scheduler.service
+After=network-online.target sccache-scheduler.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/nginx -t -c /etc/sccache/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/sccache/nginx.conf -g "daemon off;"
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

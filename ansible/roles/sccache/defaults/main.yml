@@ -1,0 +1,19 @@
+---
+sccache_version: '0.17.0'
+sccache_rust_version: '1.98.1'
+sccache_client_user: cluster
+sccache_scheduler_host: worker01
+sccache_scheduler_port: 10600
+sccache_tls_port: 10601
+sccache_builder_port: 10501
+sccache_client_port: 4227
+sccache_install_jobs: 1
+sccache_toolchain_cache_bytes: 5368709120
+sccache_manage_ufw: true
+sccache_smoke_test: false
+sccache_prefix: /opt/sucacenter
+sccache_rust_prefix: '{{ sccache_prefix }}/rust-{{ sccache_rust_version }}'
+sccache_bin_prefix: '{{ sccache_prefix }}/sccache-{{ sccache_version }}'
+sccache_scheduler_ip: '{{ hostvars[sccache_scheduler_host].ansible_host }}'
+sccache_scheduler_url: 'https://{{ sccache_scheduler_ip }}:{{ sccache_tls_port }}'
+sccache_build_hosts: '{{ groups["workers"] | difference([sccache_scheduler_host]) }}'

@@ -1,0 +1,8 @@
+# Managed by Ansible. Plain HTTP is restricted to loopback.
+public_addr = "127.0.0.1:{{ sccache_scheduler_port }}"
+[client_auth]
+type = "token"
+token = "{{ (sccache_secrets.content | b64decode | from_json).client_token }}"
+[server_auth]
+type = "jwt_hs256"
+secret_key = "{{ (sccache_secrets.content | b64decode | from_json).server_key }}"

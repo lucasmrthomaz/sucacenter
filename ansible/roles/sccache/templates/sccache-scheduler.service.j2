@@ -1,0 +1,21 @@
+[Unit]
+Description=SucaCenter sccache scheduler
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=sccache
+Group=sccache
+Environment=SCCACHE_NO_DAEMON=1
+ExecStart={{ sccache_bin_prefix }}/bin/sccache-dist scheduler --config /etc/sccache/scheduler.toml
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

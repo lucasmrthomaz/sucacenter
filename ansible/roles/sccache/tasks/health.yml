@@ -1,0 +1,60 @@
+---
+- name: Verify TLS from every node using the installed CA and expected server count
+  ansible.builtin.uri:
+    url: '{{ sccache_scheduler_url }}/api/v1/scheduler/status'
+    validate_certs: true
+    return_content: true
+    use_proxy: false
+    headers:
+      Accept: application/json
+  register: sccache_health
+  retries: 30
+  delay: 2
+  until:
+    - sccache_health.status | default(0) == 200
+    - (sccache_health.json | default({})).get('num_servers', 0) | int == sccache_build_hosts | length
+  changed_when: false
+
+- name: Check primary client can reach each build server's advertised address
+  ansible.builtin.wait_for:
+    host: '{{ hostvars[item].ansible_host }}'
+    port: '{{ sccache_builder_port }}'
+    timeout: 30
+  loop: '{{ sccache_build_hosts }}'
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Read distributed status through the real client daemon
+  become_user: '{{ sccache_client_user }}'
+  ansible.builtin.command: /usr/local/bin/sccache --dist-status
+  environment:
+    HOME: '{{ sccache_client_home }}'
+    SCCACHE_CONF: /etc/sccache/client.toml
+    SCCACHE_SERVER_PORT: '{{ sccache_client_port | string }}'
+  register: sccache_client_status
+  changed_when: false
+  retries: 10
+  delay: 2
+  until: sccache_client_status.rc == 0 and 'SchedulerStatus' in sccache_client_status.stdout
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Optionally compile a unique Rust library and require a successful remote compilation
+  become_user: '{{ sccache_client_user }}'
+  ansible.builtin.script:
+    cmd: smoke.py
+    executable: /usr/bin/python3
+  environment:
+    HOME: '{{ sccache_client_home }}'
+    PATH: '{{ sccache_rust_prefix }}/bin:/usr/local/bin:/usr/bin:/bin'
+    SCCACHE_CONF: /etc/sccache/client.toml
+    SCCACHE_SERVER_PORT: '{{ sccache_client_port | string }}'
+    RUSTC_WRAPPER: /usr/local/bin/sccache
+    CARGO_INCREMENTAL: '0'
+  changed_when: false
+  when:
+    - inventory_hostname == sccache_scheduler_host
+    - sccache_smoke_test | bool
+
+- name: Report registered build servers
+  ansible.builtin.debug:
+    msg: '{{ sccache_client_status.stdout }}'
+  when: inventory_hostname == sccache_scheduler_host

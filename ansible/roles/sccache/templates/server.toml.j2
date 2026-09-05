@@ -1,0 +1,11 @@
+cache_dir = "/var/cache/sccache-toolchains"
+toolchain_cache_size = {{ sccache_toolchain_cache_bytes }}
+public_addr = "{{ ansible_host }}:{{ sccache_builder_port }}"
+scheduler_url = "{{ sccache_scheduler_url }}"
+[builder]
+type = "overlay"
+build_dir = "/var/lib/sccache-build"
+bwrap_path = "/usr/bin/bwrap"
+[scheduler_auth]
+type = "jwt_token"
+token = "{{ sccache_builder_jwt.stdout | trim }}"

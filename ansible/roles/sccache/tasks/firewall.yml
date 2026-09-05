@@ -1,0 +1,33 @@
+---
+- name: Detect existing active UFW without enabling it
+  ansible.builtin.shell: |
+    if command -v ufw >/dev/null 2>&1; then ufw status; fi
+  environment:
+    LC_ALL: C
+  register: sccache_ufw
+  changed_when: false
+  when: sccache_manage_ufw | bool
+
+- name: Allow only required source addresses when UFW is active
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - from
+      - '{{ hostvars[item].ansible_host }}'
+      - to
+      - '{{ ansible_host }}'
+      - port
+      - '{{ (sccache_tls_port if inventory_hostname == sccache_scheduler_host else sccache_builder_port) | string }}'
+      - proto
+      - tcp
+      - comment
+      - SucaCenter-sccache
+  environment:
+    LC_ALL: C
+  loop: '{{ groups["workers"] if inventory_hostname == sccache_scheduler_host else [sccache_scheduler_host] }}'
+  when:
+    - sccache_manage_ufw | bool
+    - "'Status: active' in (sccache_ufw.stdout | default(''))"
+  register: sccache_ufw_rule
+  changed_when: "'Skipping' not in sccache_ufw_rule.stdout"

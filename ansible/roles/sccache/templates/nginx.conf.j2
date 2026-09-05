@@ -1,0 +1,27 @@
+# Dedicated instance; no changes to /etc/nginx or existing sites.
+user www-data;
+worker_processes 1;
+pid /run/sccache-nginx.pid;
+error_log stderr warn;
+events { worker_connections 256; }
+http {
+    access_log off;
+    client_body_temp_path /var/lib/sccache/nginx-body;
+    proxy_temp_path /var/lib/sccache/nginx-proxy;
+    server {
+        listen {{ sccache_scheduler_ip }}:{{ sccache_tls_port }} ssl;
+        ssl_certificate /etc/sccache/private/scheduler.crt;
+        ssl_certificate_key /etc/sccache/private/scheduler.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+{% for host in groups['workers'] %}
+        allow {{ hostvars[host].ansible_host }};
+{% endfor %}
+        deny all;
+        location / {
+            proxy_pass http://127.0.0.1:{{ sccache_scheduler_port }};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Host $host;
+            proxy_read_timeout 120s;
+        }
+    }
+}

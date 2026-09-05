@@ -1,0 +1,55 @@
+---
+- name: Enable overlay filesystem support
+  ansible.builtin.copy:
+    content: "overlay\n"
+    dest: /etc/modules-load.d/sucacenter-sccache.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Load overlay support
+  ansible.builtin.command: modprobe overlay
+  changed_when: false
+
+- name: Create local build and toolchain directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: [/var/cache/sccache-toolchains, /var/lib/sccache-build]
+
+- name: Generate deterministic per-address JWT on scheduler (master key stays there)
+  delegate_to: '{{ sccache_scheduler_host }}'
+  ansible.builtin.command:
+    argv:
+      - '{{ sccache_bin_prefix }}/bin/sccache-dist'
+      - auth
+      - generate-jwt-hs256-server-token
+      - --config
+      - /etc/sccache/scheduler.toml
+      - --server
+      - '{{ ansible_host }}:{{ sccache_builder_port }}'
+  register: sccache_builder_jwt
+  changed_when: false
+  no_log: true
+
+- name: Install private build server configuration
+  ansible.builtin.template:
+    src: server.toml.j2
+    dest: /etc/sccache/server.toml
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart sccache component
+
+- name: Install build server service
+  ansible.builtin.template:
+    src: sccache-builder.service.j2
+    dest: /etc/systemd/system/sccache-builder.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart sccache component

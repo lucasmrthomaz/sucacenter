@@ -1,0 +1,9 @@
+# Managed by Ansible. Source this file explicitly in non-login build scripts.
+if [ "$(id -un)" = {{ sccache_client_user | quote }} ]; then
+    export PATH={{ (sccache_rust_prefix + '/bin') | quote }}:"$PATH"
+    export RUSTC_WRAPPER=/usr/local/bin/sccache
+    export CARGO_INCREMENTAL=0
+    export SCCACHE_CONF=/etc/sccache/client.toml
+    export SCCACHE_SERVER_PORT={{ sccache_client_port }}
+    export SCCACHE_DIR={{ (sccache_client_home + '/.cache/sucacenter-sccache') | quote }}
+fi

@@ -1,0 +1,72 @@
+---
+- name: Install nginx binary without starting or changing the shared nginx service
+  ansible.builtin.apt:
+    name: nginx-core
+    state: present
+    policy_rc_d: 101
+
+- name: Create protected identity directory
+  ansible.builtin.file:
+    path: /etc/sccache/private
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Install identity lifecycle helper
+  ansible.builtin.copy:
+    src: identity.py
+    dest: /etc/sccache/private/identity.py
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate persistent credentials and renew scheduler certificate when needed
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /etc/sccache/private/identity.py, '{{ sccache_scheduler_ip }}']
+  register: sccache_identity
+  changed_when: (sccache_identity.stdout | from_json).changed
+  notify: Restart sccache TLS
+
+- name: Read scheduler credentials without logging or fact caching
+  ansible.builtin.slurp:
+    src: /etc/sccache/private/secrets.json
+  register: sccache_secrets
+  no_log: true
+
+- name: Read public CA for cluster trust
+  ansible.builtin.slurp:
+    src: /etc/sccache/private/ca.crt
+  register: sccache_ca
+
+- name: Install protected scheduler configuration
+  ansible.builtin.template:
+    src: scheduler.toml.j2
+    dest: /etc/sccache/scheduler.toml
+    owner: root
+    group: sccache
+    mode: '0640'
+  no_log: true
+  notify: Restart sccache component
+
+- name: Install dedicated nginx configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/sccache/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/sbin/nginx -t -c %s'
+  notify: Restart sccache TLS
+
+- name: Install scheduler services
+  ansible.builtin.template:
+    src: '{{ item }}.service.j2'
+    dest: '/etc/systemd/system/{{ item }}.service'
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [sccache-scheduler, sccache-tls]
+  notify:
+    - Restart sccache component
+    - Restart sccache TLS

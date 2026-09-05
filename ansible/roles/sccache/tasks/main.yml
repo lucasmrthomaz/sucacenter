@@ -1,0 +1,101 @@
+---
+- name: Validate supported topology and operating system before changing nodes
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.service_mgr == 'systemd'
+      - ansible_facts.architecture in ['x86_64', 'aarch64']
+      - sccache_scheduler_host in groups['workers']
+      - groups['controller'] == [sccache_scheduler_host]
+      - sccache_build_hosts | length > 0
+      - ansible_play_hosts_all | sort == groups['workers'] | sort
+      - sccache_install_jobs | int > 0
+      - sccache_toolchain_cache_bytes | int > 0
+      - sccache_scheduler_port | int != sccache_tls_port | int
+      - sccache_scheduler_port | int > 1024
+      - sccache_tls_port | int > 1024
+      - sccache_builder_port | int > 1024
+      - sccache_scheduler_port | int < 65536
+      - sccache_tls_port | int < 65536
+      - sccache_builder_port | int < 65536
+      - sccache_client_port | int > 1024
+      - sccache_client_port | int < 65536
+      - sccache_client_port | int not in [sccache_tls_port | int, sccache_scheduler_port | int]
+    fail_msg: 'Requires Debian/Ubuntu with systemd, 64-bit Linux and the complete workers group. Use --syntax-check, not --check or --limit: generated identities require real execution.'
+
+- name: Validate inventory IPv4 addresses used for TLS and JWT identities
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - 'import ipaddress,sys; ipaddress.IPv4Address(sys.argv[1])'
+      - '{{ hostvars[item].ansible_host }}'
+  loop: '{{ groups["workers"] }}'
+  changed_when: false
+  check_mode: false
+
+- name: Locate existing client account
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ sccache_client_user }}'
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Remember actual client home (do not assume /home/cluster)
+  ansible.builtin.set_fact:
+    sccache_client_home: '{{ ansible_facts.getent_passwd[sccache_client_user][5] }}'
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Install pinned toolchain and distributed binaries
+  ansible.builtin.import_tasks: install.yml
+
+- name: Configure scheduler and persistent private identity
+  ansible.builtin.include_tasks: scheduler.yml
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Distribute only the public cluster CA
+  ansible.builtin.copy:
+    content: '{{ hostvars[sccache_scheduler_host].sccache_ca.content | b64decode }}'
+    dest: /usr/local/share/ca-certificates/sucacenter-sccache.crt
+    owner: root
+    group: root
+    mode: '0644'
+  register: sccache_ca_installed
+
+- name: Refresh trusted certificates before starting clients or servers
+  ansible.builtin.command: update-ca-certificates
+  when: sccache_ca_installed.changed
+  notify: Restart sccache component
+
+- name: Configure build servers
+  ansible.builtin.include_tasks: builder.yml
+  when: inventory_hostname != sccache_scheduler_host
+
+- name: Configure primary Cargo client
+  ansible.builtin.include_tasks: client.yml
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Configure existing firewall
+  ansible.builtin.import_tasks: firewall.yml
+
+- name: Apply service and configuration changes before health checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable node component
+  ansible.builtin.systemd:
+    name: '{{ "sccache-scheduler" if inventory_hostname == sccache_scheduler_host else "sccache-builder" }}'
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Enable scheduler TLS proxy
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: [sccache-tls]
+  when: inventory_hostname == sccache_scheduler_host
+
+- name: Verify cluster connectivity and registration
+  ansible.builtin.import_tasks: health.yml

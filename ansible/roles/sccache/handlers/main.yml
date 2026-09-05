@@ -1,0 +1,13 @@
+---
+- name: Restart sccache component
+  ansible.builtin.systemd:
+    name: '{{ "sccache-scheduler" if inventory_hostname == sccache_scheduler_host else "sccache-builder" }}'
+    daemon_reload: true
+    state: restarted
+
+- name: Restart sccache TLS
+  ansible.builtin.systemd:
+    name: sccache-tls
+    daemon_reload: true
+    state: restarted
+  when: inventory_hostname == sccache_scheduler_host

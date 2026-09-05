@@ -1,0 +1,25 @@
+---
+- name: Create client cache directory
+  ansible.builtin.file:
+    path: '{{ sccache_client_home }}/.cache/sucacenter-sccache'
+    state: directory
+    owner: '{{ sccache_client_user }}'
+    group: '{{ ansible_facts.getent_passwd[sccache_client_user][3] }}'
+    mode: '0700'
+
+- name: Install private client configuration
+  ansible.builtin.template:
+    src: client.toml.j2
+    dest: /etc/sccache/client.toml
+    owner: '{{ sccache_client_user }}'
+    group: '{{ ansible_facts.getent_passwd[sccache_client_user][3] }}'
+    mode: '0600'
+  no_log: true
+
+- name: Configure Cargo wrapper for the primary user's login sessions
+  ansible.builtin.template:
+    src: profile.sh.j2
+    dest: /etc/profile.d/sucacenter-sccache.sh
+    owner: root
+    group: root
+    mode: '0644'

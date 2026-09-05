@@ -1,0 +1,8 @@
+---
+# Opt-in, like replication.yml. Run with the full workers inventory.
+- name: Configure SucaCenter distributed Rust compilation
+  hosts: workers
+  become: true
+  any_errors_fatal: true
+  roles:
+    - sccache

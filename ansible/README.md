@@ -55,3 +55,6 @@ A coleta pode ser repetida, mas os playbooks originais nao garantem uma
 execucao sem mudancas: Slurm reinicia slurmctld, NFS regrava testes com data,
 e Gitea usa a imagem latest e faz pull. Backups sao do pacote local, nao dos
 dados dos servicos. As falhas remotas nao desfazem tarefas ja aplicadas.
+
+Compilação distribuída Rust: execute o playbook independente `sccache.yml` com
+o inventory completo. Instruções, portas e variáveis em [../docs/sccache.md](../docs/sccache.md).

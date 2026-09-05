@@ -1,0 +1,18 @@
+[Unit]
+Description=SucaCenter sccache build server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Overlay mounts and bubblewrap require root and mount/user namespaces.
+# Do not add PrivateUsers or restrict CAP_SYS_ADMIN here.
+Type=simple
+User=root
+Environment=SCCACHE_NO_DAEMON=1
+ExecStart={{ sccache_bin_prefix }}/bin/sccache-dist server --config /etc/sccache/server.toml
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,136 @@
+---
+- name: Install distribution build and sandbox dependencies
+  ansible.builtin.apt:
+    name: [ca-certificates, openssl, build-essential, pkg-config, libssl-dev, bubblewrap, xz-utils, acl, kmod]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create unprivileged installation and scheduler account
+  ansible.builtin.user:
+    name: sccache
+    system: true
+    create_home: false
+    home: /var/lib/sccache
+    shell: /usr/sbin/nologin
+
+- name: Create root-owned installation and configuration directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: ['{{ sccache_prefix }}', /var/cache/sucacenter-rust, /etc/sccache]
+
+- name: Select native Rust target
+  ansible.builtin.set_fact:
+    sccache_rust_target: '{{ ansible_facts.architecture }}-unknown-linux-gnu'
+
+- name: Check pinned Rust installation
+  ansible.builtin.stat:
+    path: '{{ sccache_rust_prefix }}/bin/rustc'
+  register: sccache_rust_installed
+
+- name: Install official Rust distribution with upstream SHA256 verification
+  when: not sccache_rust_installed.stat.exists
+  block:
+    - name: Download pinned Rust archive
+      ansible.builtin.get_url:
+        url: 'https://static.rust-lang.org/dist/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}.tar.xz'
+        checksum: 'sha256:https://static.rust-lang.org/dist/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}.tar.xz.sha256'
+        dest: '/var/cache/sucacenter-rust/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}.tar.xz'
+        mode: '0644'
+    - name: Extract verified archive
+      ansible.builtin.unarchive:
+        src: '/var/cache/sucacenter-rust/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}.tar.xz'
+        dest: /var/cache/sucacenter-rust
+        remote_src: true
+        creates: '/var/cache/sucacenter-rust/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}/install.sh'
+    - name: Install compiler, standard library and Cargo in isolated prefix
+      ansible.builtin.command:
+        argv:
+          - /bin/sh
+          - '/var/cache/sucacenter-rust/rust-{{ sccache_rust_version }}-{{ sccache_rust_target }}/install.sh'
+          - '--prefix={{ sccache_rust_prefix }}'
+          - '--components=rustc,rust-std-{{ sccache_rust_target }},cargo'
+          - --disable-ldconfig
+        creates: '{{ sccache_rust_prefix }}/bin/rustc'
+
+- name: Create private Cargo build cache
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: sccache
+    group: sccache
+    mode: '0755'
+  loop: [/var/lib/sccache]
+
+- name: Create root-owned versioned binary directory
+  ansible.builtin.file:
+    path: '{{ sccache_bin_prefix }}/bin'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Check both distributed binaries
+  ansible.builtin.stat:
+    path: '{{ sccache_bin_prefix }}/bin/{{ item }}'
+  loop: [sccache, sccache-dist]
+  register: sccache_binaries
+
+- name: Compile pinned sccache with client and server features (can take several minutes)
+  become_user: sccache
+  ansible.builtin.command:
+    argv:
+      - '{{ sccache_rust_prefix }}/bin/cargo'
+      - install
+      - sccache
+      - --version
+      - '={{ sccache_version }}'
+      - --locked
+      - --no-default-features
+      - --features
+      - dist-client,dist-server
+      - --root
+      - '/var/lib/sccache/install-{{ sccache_version }}'
+      - --jobs
+      - '{{ sccache_install_jobs | string }}'
+      - --force
+  environment:
+    PATH: '{{ sccache_rust_prefix }}/bin:/usr/local/bin:/usr/bin:/bin'
+    CARGO_HOME: /var/lib/sccache/cargo
+    RUSTC_WRAPPER: ''
+    CARGO_INCREMENTAL: '0'
+  when: not (sccache_binaries.results[0].stat.exists and sccache_binaries.results[1].stat.exists)
+  notify: Restart sccache component
+
+- name: Install compiled binaries as root-owned executables
+  ansible.builtin.copy:
+    src: '/var/lib/sccache/install-{{ sccache_version }}/bin/{{ item }}'
+    dest: '{{ sccache_bin_prefix }}/bin/{{ item }}'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [sccache, sccache-dist]
+  when: not (sccache_binaries.results[0].stat.exists and sccache_binaries.results[1].stat.exists)
+  notify: Restart sccache component
+
+- name: Expose sccache binaries
+  ansible.builtin.file:
+    src: '{{ sccache_bin_prefix }}/bin/{{ item }}'
+    dest: '/usr/local/bin/{{ item }}'
+    state: link
+  loop: [sccache, sccache-dist]
+  notify: Restart sccache component
+
+- name: Validate bubblewrap version
+  ansible.builtin.command: /usr/bin/bwrap --version
+  register: sccache_bwrap
+  changed_when: false
+
+- name: Require supported bubblewrap
+  ansible.builtin.assert:
+    that: sccache_bwrap.stdout.split()[-1] is version('0.3.0', '>=')
