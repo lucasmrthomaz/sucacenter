@@ -1,0 +1,23 @@
+#cloud-config
+# Template: gere o user-data final com render.py antes de iniciar a VM.
+preserve_hostname: false
+manage_etc_hosts: true
+users:
+  - name: cluster
+    primary_group: cluster
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - __MASTER_PUBLIC_KEY__
+disable_root: true
+ssh_pwauth: false
+ssh_deletekeys: true
+package_update: true
+packages:
+  - sudo
+  - python3
+  - openssh-server
+runcmd:
+  - [systemctl, enable, --now, ssh]

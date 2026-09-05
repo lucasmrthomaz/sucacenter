@@ -1,0 +1,3 @@
+# Use um instance-id novo ao recriar/clonar esta VM.
+instance-id: sucacenter-worker03-001
+local-hostname: worker03
