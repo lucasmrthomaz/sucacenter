@@ -14,6 +14,8 @@ class PackageTests(unittest.TestCase):
         with zipfile.ZipFile(ROOT/f'dist/sucacenter-{version}.zip') as z:
             names = z.namelist()
             self.assertIn('sucacenter/README.md', names)
+            self.assertIn('sucacenter/bootstrap-monitoring.sh', names)
+            self.assertIn('sucacenter/docs/monitoramento.md', names)
             self.assertIn('sucacenter/steps/07-swarm.sh', names)
             self.assertIn('sucacenter/ansible/inventory.ini', names)
             self.assertIn('sucacenter/ansible/playbooks/healthcheck.yml', names)

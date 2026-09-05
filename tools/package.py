@@ -8,7 +8,7 @@ import tarfile
 import zipfile
 root = Path(__file__).resolve().parents[1]
 paths = []
-for name in ['sucacenter.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
+for name in ['sucacenter.sh', 'bootstrap-monitoring.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
              '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible', 'stacks']:
     item = root / name
     for p in sorted(item.rglob('*')) if item.is_dir() else [item]:
