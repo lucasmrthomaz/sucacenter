@@ -7,6 +7,13 @@ e testes, agora com Slurm, NFS, Samba, Gitea, replicacao e Portainer. Versão 1.
 Fonte oficial: [lucasmrthomaz/sucacenter](https://github.com/lucasmrthomaz/sucacenter).
 Codigo, documentacao e downloads sao mantidos neste mesmo repositorio.
 
+## Monitoramento OnePage
+
+No master, execute `bash bootstrap-monitoring.sh` e informe os hosts por SSH.
+O arquivo instala Prometheus, Grafana e Node Exporter, provisiona o dashboard e
+mostra a senha gerada ao final. Reutiliza o Docker existente. Se o Gitea ocupar
+3000, o Grafana usa 3001 automaticamente. Leia [monitoramento](docs/monitoramento.md).
+
 ## Portainer no Swarm
 
 No worker01, depois que o Swarm estiver operacional:
