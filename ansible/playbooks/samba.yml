@@ -59,7 +59,7 @@
              force group = {{ samba_user }}
              create mask = 0664
              directory mask = 0775
-             hosts allow = 127. 192.168.1.
+             hosts allow = 127. {{ sucacenter_network_cidr | regex_replace('/.*$', '') | regex_replace('0$', '') }}
              hosts deny = 0.0.0.0/0
       notify:
         - Reiniciar Samba

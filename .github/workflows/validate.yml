@@ -7,6 +7,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Reject CRLF in managed text files
+        run: |
+          if git grep -Il $'\r' -- '*.sh' '*.yml' '*.yaml' '*.ini'; then
+            echo 'CRLF found in a managed text file' >&2
+            exit 1
+          fi
       - name: Bash syntax and unit tests (no infrastructure changes)
         run: bash tests/unit.sh
       - name: Build standalone and ZIP
@@ -15,10 +21,17 @@ jobs:
         run: bash -n dist/bootstrap-sucacenter.sh
       - name: Install Ansible validation dependencies
         run: |
-          python3 -m pip install ansible-core
-          ansible-galaxy collection install ansible.posix
+          python3 -m pip install ansible-core ansible-lint yamllint
+          ansible-galaxy collection install -r ansible/requirements.yml
+      - name: YAML and Ansible lint
+        run: |
+          yamllint -c .yamllint.yml ansible config .github/workflows
+          ansible-lint --profile min ansible
       - name: Ansible syntax (no remote connections)
         run: |
-          ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
-          ansible-playbook -i ansible/inventory.ini ansible/replication.yml --syntax-check
-          ansible-playbook -i ansible/inventory.ini ansible/replication-status.yml --syntax-check
+          extra_vars='@config/config.example.yml'
+          ansible-playbook -i ansible/inventory.example.ini ansible/site.yml -e "$extra_vars" --syntax-check
+          ansible-playbook -i ansible/inventory.example.ini ansible/replication.yml -e "$extra_vars" --syntax-check
+          ansible-playbook -i ansible/inventory.example.ini ansible/replication-status.yml -e "$extra_vars" --syntax-check
+          ansible-playbook -i ansible/inventory.example.ini ansible/playbooks/backup.yml -e "$extra_vars" --syntax-check
+          ansible-playbook -i ansible/inventory.example.ini ansible/playbooks/restore.yml -e "$extra_vars" -e sucacenter_restore_archive=/tmp/example.tar.gz --syntax-check

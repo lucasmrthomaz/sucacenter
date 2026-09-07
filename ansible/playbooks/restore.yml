@@ -1,0 +1,30 @@
+---
+- name: Restore SucaCenter data archive
+  hosts: controller
+  become: true
+  vars:
+    remote_archive: "/tmp/sucacenter-restore.tar.gz"
+  tasks:
+    - name: Require an explicit local backup archive
+      ansible.builtin.assert:
+        that:
+          - sucacenter_restore_archive is defined
+          - sucacenter_restore_archive | length > 0
+        fail_msg: Pass sucacenter_restore_archive with an existing backup file.
+
+    - name: Upload selected archive
+      ansible.builtin.copy:
+        src: "{{ sucacenter_restore_archive }}"
+        dest: "{{ remote_archive }}"
+        mode: "0600"
+
+    - name: Restore archive
+      ansible.builtin.unarchive:
+        src: "{{ remote_archive }}"
+        dest: "{{ sucacenter_restore_root }}"
+        remote_src: true
+
+    - name: Remove temporary remote archive
+      ansible.builtin.file:
+        path: "{{ remote_archive }}"
+        state: absent

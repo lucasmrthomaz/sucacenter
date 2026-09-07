@@ -62,13 +62,24 @@ O comando services usa os arquivos deste pacote por padrao. Leia
 
 ## Comece aqui
 
-Leia [instalação](docs/instalacao.md) antes de usar em máquinas novas.
-Requer Linux Mint/Ubuntu/Debian com systemd, Bash 4+, Python 3.9+, SSH e conta
-operacional não-root. A instalação de serviços exige autorização administrativa.
+Em uma máquina Debian/Ubuntu nova, o fluxo zero-touch é um único comando:
 
-    git clone https://github.com/lucasmrthomaz/sucacenter.git
-    cd sucacenter
-    bash sucacenter.sh setup --grant-docker-access
+    curl -fsSL https://raw.githubusercontent.com/lucasmrthomaz/sucacenter/main/bootstrap.sh | bash
+
+O bootstrap instala dependências, clona ou atualiza o repositório em
+`~/.local/share/sucacenter`, detecta o controller, gera inventário/configuração
+locais, valida SSH e Ansible e aplica `ansible/site.yml`. Para incluir workers sem
+editar arquivo, passe uma lista separada por vírgulas:
+
+    curl -fsSL https://raw.githubusercontent.com/lucasmrthomaz/sucacenter/main/bootstrap.sh | SUCACENTER_WORKERS=cluster@192.0.2.10,cluster@192.0.2.11 bash
+
+Se a chave ainda não estiver autorizada, passe `SUCACENTER_SSH_PASSWORD` apenas
+nesse processo; ela não é gravada. `SUCACENTER_BECOME_PASSWORD` pode ser usado
+para sudo remoto e é salvo com modo 0600 em `secrets/vars.yml`, diretório ignorado
+pelo Git. Prefira sudo sem senha restrito às tarefas administrativas do cluster.
+
+Modos seguros: `--prepare` só gera os arquivos e `--validate` para após as
+validações. Consulte [instalação](docs/instalacao.md) para variáveis suportadas.
 
 Também pode extrair o ZIP da release e executar
 o mesmo comando, sem Git no cluster. Não execute o setup inteiro com sudo.
@@ -83,6 +94,17 @@ são preservados. Exemplos: manager 192.168.1.110; worker cluster@192.168.1.103.
 Em outra rede, execute step workspace e edite esses arquivos antes do setup.
 
 ## Operação
+
+O bootstrap instala a interface operacional abaixo em `~/.local/bin/suca`:
+
+    suca status
+    suca validate
+    suca apply
+    suca update
+    suca backup
+    suca restore ~/.local/share/sucacenter/backups/sucacenter-AAAAMMDDTHHMMSS.tar.gz
+
+Os comandos históricos permanecem compatíveis:
 
     bash sucacenter.sh status
     bash sucacenter.sh doctor

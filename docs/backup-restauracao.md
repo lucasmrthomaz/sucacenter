@@ -12,6 +12,19 @@ para armazenamento separado e faça uma restauração de teste. A replicação d
 shared-files não protege contra corrupção/exclusão/perda dos dois discos.
 Não arquive bancos em uso sem garantir consistência.
 
+## Fluxo automatizado
+
+`suca backup` cria no controller um arquivo temporário dos caminhos definidos em
+`config/config.local.yml`, baixa o resultado para o diretório local `backups/`
+ignorado pelo Git e remove o temporário remoto. O padrão inclui `/srv/sucacenter`
+e `/srv/gitea`. Pare aplicações que exigem consistência transacional antes do
+backup.
+
+`suca restore CAMINHO.tar.gz` exige a escolha explícita de um arquivo local,
+envia-o ao controller, restaura no diretório configurado e remove o temporário.
+A restauração sobrescreve arquivos com os dados do arquivo selecionado; faça um
+backup atual antes e valide permissões e serviços ao terminar.
+
 ## Reconstruir
 
 1. Instale Linux, pré-requisitos, contas e IPs.

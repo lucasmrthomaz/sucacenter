@@ -1,0 +1,10 @@
+---
+# Copied automatically to config/config.local.yml. The bootstrap replaces these
+# safe example values with detected local values; the generated file is ignored.
+sucacenter_controller_address: 127.0.0.1
+sucacenter_network_cidr: 127.0.0.0/8
+sucacenter_ssh_user: cluster
+sucacenter_backup_paths:
+  - /srv/sucacenter
+  - /srv/gitea
+sucacenter_restore_root: /
