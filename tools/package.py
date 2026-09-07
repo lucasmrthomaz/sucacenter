@@ -8,13 +8,13 @@ import tarfile
 import zipfile
 root = Path(__file__).resolve().parents[1]
 paths = []
-for name in ['sucacenter.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
-             '.gitattributes', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible', 'stacks']:
+for name in ['bootstrap.sh', 'sucacenter.sh', 'README.md', 'VERSION', 'CHANGELOG.md', '.gitignore',
+             '.gitattributes', '.yamllint.yml', '.github', 'config', 'lib', 'commands', 'steps', 'tests', 'docs', 'tools', 'ansible', 'stacks']:
     item = root / name
     for p in sorted(item.rglob('*')) if item.is_dir() else [item]:
         if not p.is_file() or p.is_symlink() or '__pycache__' in p.parts or p.suffix == '.pyc':
             continue
-        if p.parent == root / 'config' and '.example' not in p.name:
+        if p.name.endswith('.local.yml') or p.name == 'inventory.local.ini' or 'secrets' in p.parts or 'backups' in p.parts:
             continue
         paths.append(p)
 paths.sort()

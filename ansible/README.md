@@ -21,7 +21,8 @@ em sucacenter-bootstrap.backup-*/previous-directory ao lado dele.
 As fontes nao sao alteradas. Execute apenas uma instancia de cada vez.
 
 Fontes: ~/sucacenter-user primeiro, depois playbooks/ do pacote por arquivo.
-Inventory: ~/inventory.ini, depois inventory.ini na fonte e no pacote.
+Inventory: ~/inventory.local.ini, depois inventory.local.ini na fonte e o exemplo
+seguro do pacote. O fluxo recomendado gera `inventory.local.ini` automaticamente.
 SUCACENTER_SOURCE_DIR e SUCACENTER_INVENTORY selecionam fontes explicitas,
 sem fallback para os respectivos arquivos. SUCACENTER_BOOTSTRAP_DIR permite
 outro caminho, mas o nome final deve ser sucacenter-bootstrap.
@@ -33,10 +34,9 @@ Checkpoints:
 1. Confira missing-playbooks.txt e os arquivos coletados.
 2. Instale Ansible no controlador de execucao e a colecao usada pelo NFS:
    `ansible-galaxy collection install ansible.posix`. SSH e Python 3 sao exigidos.
-3. O inventory incluido define workers=worker01,worker02 e controller=worker01,
-   com worker01=192.168.1.110 e worker02=192.168.1.103, usuario SSH cluster
-   e Python remoto /usr/bin/python3. O script verifica os IPs e grupos sem
-   reescrever o inventory. Configure a chave SSH e acesso sudo do usuario.
+3. O inventory de exemplo contém apenas localhost e nenhum dado da rede real.
+   O script verifica que existe exatamente um controller, que ele também pertence
+   a workers e que há ao menos um worker. Configure chave SSH e acesso sudo.
    Se houver inventory em ~/inventory.ini, ele tem prioridade; para usar
    explicitamente o incluido, prefixe o comando com
    `SUCACENTER_INVENTORY="$PWD/inventory.ini"` na pasta extraida.

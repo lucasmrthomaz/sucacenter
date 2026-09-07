@@ -14,7 +14,7 @@
     gitea_compose: /srv/gitea/compose.yml
     gitea_http_port: 3000
     gitea_ssh_port: 2222
-    gitea_host: 192.168.1.110
+    gitea_host: "{{ sucacenter_controller_address }}"
     gitea_image: gitea/gitea:latest
 
   tasks:

@@ -1,0 +1,33 @@
+---
+- name: Prepare fresh SucaCenter nodes
+  hosts: workers
+  become: true
+  tasks:
+    - name: Create cluster group
+      ansible.builtin.group:
+        name: cluster
+        state: present
+
+    - name: Create cluster service account
+      ansible.builtin.user:
+        name: cluster
+        group: cluster
+        create_home: true
+        shell: /bin/bash
+        state: present
+
+    - name: Install base service dependencies
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+          - nfs-common
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Enable Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started

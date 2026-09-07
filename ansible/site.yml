@@ -1,4 +1,5 @@
 ---
+- import_playbook: playbooks/preflight.yml
 - import_playbook: playbooks/slurm.yml
 - import_playbook: playbooks/storage.yml
 - import_playbook: playbooks/samba.yml

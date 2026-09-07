@@ -1,6 +1,17 @@
 # Local configuration and secrets are never part of a release.
 config/settings.env
 config/nodes
+config/config.local.yml
+config/*.local.yml
+ansible/inventory.local.ini
+ansible/inventory-resolved.json
+inventory.local.ini
+secrets/
+backups/
+ansible/secrets/
+ansible/backups/
+.vault-password*
+*.vault
 .env
 .env.*
 !.env.example

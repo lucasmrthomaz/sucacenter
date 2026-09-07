@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+default_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [[ -r "$HOME/.config/sucacenter/root" ]]; then default_root="$(<"$HOME/.config/sucacenter/root")"; fi
+ROOT="${SUCACENTER_ROOT:-$default_root}"
+INVENTORY="${SUCACENTER_INVENTORY:-$ROOT/ansible/inventory.local.ini}"
+CONFIG="${SUCACENTER_CONFIG:-$ROOT/config/config.local.yml}"
+require_local() { [[ -s "$INVENTORY" && -s "$CONFIG" ]] || { echo 'Run bootstrap.sh first.' >&2; exit 1; }; }
+playbook() {
+  require_local
+  local vars=(-e "@$CONFIG")
+  [[ -s "$ROOT/secrets/vars.yml" ]] && vars+=(-e "@$ROOT/secrets/vars.yml")
+  ansible-playbook -i "$INVENTORY" "${vars[@]}" "$@"
+}
+
+case "${1:-help}" in
+  status)
+    require_local
+    ansible -i "$INVENTORY" all -m ansible.builtin.ping
+    playbook "$ROOT/ansible/playbooks/healthcheck.yml"
+    ;;
+  validate)
+    require_local
+    ansible-inventory -i "$INVENTORY" --list >/dev/null
+    ansible -i "$INVENTORY" all -m ansible.builtin.ping
+    playbook "$ROOT/ansible/site.yml" --syntax-check
+    ;;
+  apply)
+    playbook "$ROOT/ansible/site.yml"
+    ;;
+  update)
+    git -C "$ROOT" diff --quiet && git -C "$ROOT" diff --cached --quiet || { echo 'Refusing update: repository has local changes.' >&2; exit 1; }
+    git -C "$ROOT" pull --ff-only
+    exec bash "$ROOT/bootstrap.sh" --validate
+    ;;
+  backup)
+    playbook "$ROOT/ansible/playbooks/backup.yml"
+    ;;
+  restore)
+    [[ -n "${2:-}" ]] || { echo 'usage: suca restore BACKUP.tar.gz' >&2; exit 2; }
+    archive="$(cd -- "$(dirname -- "$2")" && pwd -P)/$(basename -- "$2")"
+    [[ -f "$archive" ]] || { echo "Backup not found: $archive" >&2; exit 1; }
+    playbook "$ROOT/ansible/playbooks/restore.yml" -e "sucacenter_restore_archive=$archive"
+    ;;
+  help|-h|--help)
+    echo 'usage: suca {status|validate|apply|update|backup|restore BACKUP.tar.gz}'
+    ;;
+  *) echo "Unknown command: $1" >&2; exit 2;;
+esac

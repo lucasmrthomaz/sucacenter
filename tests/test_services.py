@@ -17,7 +17,7 @@ class ServicesTests(unittest.TestCase):
             dest = Path(folder) / 'sucacenter-bootstrap'
             env = dict(os.environ, SUCACENTER_PACKAGE=str(ROOT / 'ansible'),
                        SUCACENTER_SOURCE_DIR=str(ROOT / 'ansible/playbooks'),
-                       SUCACENTER_INVENTORY=str(ROOT / 'ansible/inventory.ini'),
+                       SUCACENTER_INVENTORY=str(ROOT / 'ansible/inventory.example.ini'),
                        SUCACENTER_BOOTSTRAP_DIR=str(dest))
             for iteration in range(2):
                 result = subprocess.run([sys.executable, '-c', BLOCKS[0]], env=env,
@@ -25,23 +25,23 @@ class ServicesTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn('MISSING:', result.stderr)
                 self.assertEqual((dest / 'site.yml').read_text(), (ROOT / 'ansible/site.yml').read_text())
-                self.assertEqual((dest / 'inventory.ini').read_bytes(), (ROOT / 'ansible/inventory.ini').read_bytes())
+                self.assertEqual((dest / 'inventory.ini').read_bytes(), (ROOT / 'ansible/inventory.example.ini').read_bytes())
                 self.assertTrue((dest / 'originals/gitea.yml').is_file())
                 env['SUCACENTER_PACKAGE'] = str(dest)
             self.assertEqual(len(list(Path(folder).glob('sucacenter-bootstrap.backup-*'))), 1)
 
     def test_inventory_guard(self):
-        data = {'workers': {'hosts': ['worker01', 'worker02']},
-                'controller': {'hosts': ['worker01']},
-                '_meta': {'hostvars': {'worker01': {'ansible_host': '192.168.1.110'},
-                                      'worker02': {'ansible_host': '192.168.1.103'}}}}
+        data = {'workers': {'hosts': ['controller', 'worker01']},
+                'controller': {'hosts': ['controller']},
+                '_meta': {'hostvars': {'controller': {'ansible_host': '127.0.0.1'},
+                                      'worker01': {'ansible_host': '192.0.2.10'}}}}
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)
             (path / 'playbooks').mkdir()
             (path / 'playbooks/slurm.yml').write_text('---\n[]\n')
             for valid in (True, False):
                 if not valid:
-                    data['_meta']['hostvars']['worker01']['ansible_host'] = '192.168.1.999'
+                    data['controller']['hosts'] = ['controller', 'worker01']
                 (path / 'inventory-resolved.json').write_text(json.dumps(data))
                 result = subprocess.run([sys.executable, '-c', BLOCKS[1]], cwd=path,
                                         capture_output=True, text=True)

@@ -47,7 +47,7 @@
         group: root
         mode: "0644"
         content: |
-          /srv/sucacenter/shared 192.168.1.0/24(rw,sync,no_subtree_check)
+          /srv/sucacenter/shared {{ sucacenter_network_cidr }}(rw,sync,no_subtree_check)
       notify:
         - Recarregar exports
 
@@ -92,7 +92,7 @@
 
     - name: Montar shared storage
       ansible.posix.mount:
-        src: 192.168.1.110:/srv/sucacenter/shared
+        src: "{{ sucacenter_controller_address }}:/srv/sucacenter/shared"
         path: /mnt/shared
         fstype: nfs
         opts: rw,_netdev

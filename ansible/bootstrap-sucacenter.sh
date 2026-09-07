@@ -28,7 +28,7 @@ if dest.name != 'sucacenter-bootstrap' or dest == home or dest in home.parents:
 if dest.exists() and not dest.is_dir():
     sys.exit('ERROR: destination is not a directory.')
 source = pathlib.Path(os.environ.get('SUCACENTER_SOURCE_DIR', str(home / 'sucacenter-user'))).expanduser().resolve()
-order = ['slurm.yml', 'storage.yml', 'samba.yml', 'gitea.yml', 'healthcheck.yml']
+order = ['preflight.yml', 'slurm.yml', 'storage.yml', 'samba.yml', 'gitea.yml', 'healthcheck.yml']
 dest.parent.mkdir(parents=True, exist_ok=True)
 stage = pathlib.Path(tempfile.mkdtemp(prefix='.sucacenter-stage-', dir=dest.parent))
 (stage / 'playbooks').mkdir()
@@ -48,7 +48,7 @@ try:
         found.append(name)
         report.append('FOUND: ' + name + ' <- ' + str(selected))
     candidates = ([pathlib.Path(os.environ['SUCACENTER_INVENTORY']).expanduser()] if 'SUCACENTER_INVENTORY' in os.environ
-                  else [home / 'inventory.ini', source / 'inventory.ini', package / 'inventory.ini'])
+                  else [home / 'inventory.local.ini', source / 'inventory.local.ini', package / 'inventory.example.ini'])
     inventory = next((p for p in candidates if p.is_file()), None)
     if inventory is None:
         report.append('MISSING: inventory.ini (required before validation or execution)')
@@ -112,13 +112,12 @@ def members(group, seen=None):
         result |= members(child, seen)
     return result
 hosts = data.get('_meta', {}).get('hostvars', {})
-for node, address in {'worker01': '192.168.1.110', 'worker02': '192.168.1.103'}.items():
-    if node not in members('workers'):
-        sys.exit('ERROR: workers must include ' + node)
-    if str(hosts.get(node, {}).get('ansible_host', node)) != address:
-        sys.exit('ERROR: set ansible_host=' + address + ' for ' + node + ' in the real inventory.')
-if members('controller') != {'worker01'}:
-    sys.exit('ERROR: controller must contain worker01 only for these playbooks.')
+if len(members('controller')) != 1:
+    sys.exit('ERROR: controller must contain exactly one host.')
+if not members('workers'):
+    sys.exit('ERROR: workers must contain at least the controller host.')
+if not members('controller').issubset(members('workers')):
+    sys.exit('ERROR: the controller must also be a member of workers.')
 if not any(pathlib.Path('playbooks').glob('*.yml')):
     sys.exit('ERROR: no playbooks found.')
 PY

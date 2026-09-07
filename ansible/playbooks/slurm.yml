@@ -23,8 +23,9 @@
         path: /etc/hosts
         marker: "# {mark} SUCACENTER"
         block: |
-          192.168.1.110 worker01
-          192.168.1.103 worker02
+          {% for node in groups['workers'] %}
+          {{ hostvars[node].ansible_host | default(node) }} {{ node }}
+          {% endfor %}
 
     - name: Atualizar cache APT
       ansible.builtin.apt:
@@ -88,7 +89,7 @@
 
     - name: Instalar chave compartilhada MUNGE
       ansible.builtin.copy:
-        content: "{{ hostvars['worker01']['munge_key_content']['content'] | b64decode }}"
+        content: "{{ hostvars[groups['controller'][0]]['munge_key_content']['content'] | b64decode }}"
         dest: /etc/munge/munge.key
         owner: munge
         group: munge
@@ -157,7 +158,7 @@
           # ==================================================
 
           ClusterName=sucacenter
-          SlurmctldHost=worker01
+          SlurmctldHost={{ groups['controller'][0] }}
 
           SlurmctldPort=6817
           SlurmdPort=6818
@@ -180,46 +181,15 @@
 
           ReturnToService=2
 
-          # --------------------------------------------------
-          # worker01
-          # 1 socket
-          # 2 cores
-          # 1 thread/core
-          # --------------------------------------------------
-
-          NodeName=worker01 \
-          NodeAddr=192.168.1.110 \
-          CPUs=2 \
-          Boards=1 \
-          SocketsPerBoard=1 \
-          CoresPerSocket=2 \
-          ThreadsPerCore=1 \
-          RealMemory=3400 \
+          {% for node in groups['workers'] %}
+          NodeName={{ node }} \
+          NodeAddr={{ hostvars[node].ansible_host | default(node) }} \
+          CPUs={{ hostvars[node].ansible_processor_vcpus | default(1) }} \
+          RealMemory={{ ((hostvars[node].ansible_memtotal_mb | default(1024) | int) * 0.9) | int }} \
           State=UNKNOWN
-
-          # --------------------------------------------------
-          # worker02
-          # 1 socket
-          # 2 cores
-          # 2 threads/core
-          # --------------------------------------------------
-
-          NodeName=worker02 \
-          NodeAddr=192.168.1.103 \
-          CPUs=4 \
-          Boards=1 \
-          SocketsPerBoard=1 \
-          CoresPerSocket=2 \
-          ThreadsPerCore=2 \
-          RealMemory=3400 \
-          State=UNKNOWN
-
-          # --------------------------------------------------
-          # Partition
-          # --------------------------------------------------
-
+          {% endfor %}
           PartitionName=suca \
-          Nodes=worker01,worker02 \
+          Nodes={{ groups['workers'] | join(',') }} \
           Default=YES \
           MaxTime=INFINITE \
           State=UP

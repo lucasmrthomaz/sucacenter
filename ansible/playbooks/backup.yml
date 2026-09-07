@@ -1,0 +1,44 @@
+---
+- name: Create a consistent SucaCenter data archive
+  hosts: controller
+  become: true
+  vars:
+    backup_name: "sucacenter-{{ ansible_date_time.iso8601_basic_short }}.tar.gz"
+    remote_backup: "/tmp/{{ backup_name }}"
+  tasks:
+    - name: Find configured paths that exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ sucacenter_backup_paths }}"
+      register: backup_path_stats
+
+    - name: Build list of existing backup paths
+      ansible.builtin.set_fact:
+        existing_backup_paths: "{{ backup_path_stats.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+
+    - name: Refuse to create an empty backup
+      ansible.builtin.assert:
+        that: existing_backup_paths | length > 0
+        fail_msg: No configured SucaCenter data paths exist.
+
+    - name: Create archive on controller
+      ansible.builtin.archive:
+        path: "{{ existing_backup_paths }}"
+        dest: "{{ remote_backup }}"
+        format: gz
+        mode: "0600"
+
+    - name: Download archive to ignored backup directory
+      ansible.builtin.fetch:
+        src: "{{ remote_backup }}"
+        dest: "{{ playbook_dir }}/../../backups/{{ backup_name }}"
+        flat: true
+
+    - name: Remove temporary remote archive
+      ansible.builtin.file:
+        path: "{{ remote_backup }}"
+        state: absent
+
+    - name: Report backup location
+      ansible.builtin.debug:
+        msg: "Backup saved as backups/{{ backup_name }}"
